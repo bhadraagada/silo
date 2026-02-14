@@ -9,7 +9,27 @@
   --signal: #ffd400;
   --ok: #1cb45a;
   --bad: #e32020;
+  --button-text: #ffffff;
+  --button-muted-bg: #111111;
+  --button-muted-text: #ffffff;
+  --input-bg: #ffffff;
   --shadow: 8px 8px 0 var(--line);
+}
+
+body[data-theme="dark"] {
+  --bg: #12161c;
+  --ink: #f1f1f1;
+  --paper: #1c2129;
+  --line: #d7dde7;
+  --accent: #f97316;
+  --signal: #ffd84a;
+  --ok: #22c55e;
+  --bad: #ef4444;
+  --button-text: #111111;
+  --button-muted-bg: #d7dde7;
+  --button-muted-text: #111111;
+  --input-bg: #11161d;
+  --shadow: 8px 8px 0 #000;
 }
 
 * {
@@ -25,6 +45,15 @@ body {
     linear-gradient(225deg, rgba(0, 0, 0, 0.04) 25%, transparent 25%) -14px 0 / 28px 28px,
     linear-gradient(315deg, rgba(0, 0, 0, 0.04) 25%, transparent 25%) 0 0 / 28px 28px,
     linear-gradient(45deg, rgba(0, 0, 0, 0.04) 25%, transparent 25%) 0 0 / 28px 28px,
+    var(--bg);
+}
+
+body[data-theme="dark"] {
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.04) 25%, transparent 25%) -14px 0 / 28px 28px,
+    linear-gradient(225deg, rgba(255, 255, 255, 0.04) 25%, transparent 25%) -14px 0 / 28px 28px,
+    linear-gradient(315deg, rgba(255, 255, 255, 0.04) 25%, transparent 25%) 0 0 / 28px 28px,
+    linear-gradient(45deg, rgba(255, 255, 255, 0.04) 25%, transparent 25%) 0 0 / 28px 28px,
     var(--bg);
 }
 
@@ -75,6 +104,16 @@ body {
   justify-items: end;
 }
 
+.view-switch {
+  display: flex;
+  gap: 6px;
+}
+
+.view-switch button.active {
+  background: var(--signal);
+  color: #111;
+}
+
 .stamp {
   border: 3px solid var(--line);
   background: var(--signal);
@@ -88,7 +127,7 @@ body {
 button {
   border: 3px solid var(--line);
   background: var(--accent);
-  color: #fff;
+  color: var(--button-text);
   border-radius: 0;
   padding: 9px 12px;
   font-family: "IBM Plex Mono", "Courier New", monospace;
@@ -112,8 +151,25 @@ select {
   border: 3px solid var(--line);
   border-radius: 0;
   padding: 8px;
-  background: #fff;
+  background: var(--input-bg);
+  color: var(--ink);
   font-family: "IBM Plex Mono", "Courier New", monospace;
+}
+
+input,
+textarea {
+  width: 100%;
+  border: 3px solid var(--line);
+  border-radius: 0;
+  padding: 8px;
+  background: var(--input-bg);
+  color: var(--ink);
+  font-family: "IBM Plex Mono", "Courier New", monospace;
+}
+
+textarea {
+  min-height: 78px;
+  resize: vertical;
 }
 
 label {
@@ -191,7 +247,11 @@ label {
   margin-bottom: 8px;
   display: grid;
   gap: 5px;
-  background: #fff;
+  background: color-mix(in srgb, var(--paper) 90%, #000 10%);
+}
+
+body[data-theme="dark"] .row {
+  background: color-mix(in srgb, var(--paper) 95%, #000 5%);
 }
 
 .row span {
@@ -202,6 +262,67 @@ label {
 .row small {
   opacity: 0.92;
   line-height: 1.25;
+  word-break: break-word;
+}
+
+.form-grid {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.row.clickable {
+  cursor: pointer;
+  transition: transform 80ms ease, box-shadow 80ms ease;
+}
+
+.row.clickable:hover {
+  transform: translate(-2px, -2px);
+  box-shadow: 4px 4px 0 var(--line);
+}
+
+.row.focused {
+  border-color: var(--accent);
+  border-width: 3px;
+}
+
+.prompt-text {
+  font-style: italic;
+  opacity: 0.75;
+}
+
+.continue-box {
+  margin-top: 10px;
+  padding: 10px;
+  border: 3px solid var(--accent);
+}
+
+.continue-box h4 {
+  margin: 0 0 8px;
+  font-family: "Bebas Neue", Impact, sans-serif;
+  font-size: 1.1rem;
+  letter-spacing: 0.04em;
+}
+
+h4 {
+  margin: 10px 0 6px;
+  font-family: "Bebas Neue", Impact, sans-serif;
+  font-size: 1.1rem;
+  letter-spacing: 0.04em;
+}
+
+.inline-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  text-transform: none;
+  font-size: 0.8rem;
+}
+
+.inline-option input {
+  width: auto;
+  margin: 0;
 }
 
 .actions {
@@ -213,7 +334,13 @@ label {
 .actions button {
   padding: 6px 10px;
   font-size: 0.72rem;
-  background: var(--line);
+  background: var(--button-muted-bg);
+  color: var(--button-muted-text);
+}
+
+button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 .pill {
@@ -226,7 +353,7 @@ label {
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  background: #fff;
+  background: var(--paper);
 }
 
 .pill.running,
@@ -256,6 +383,22 @@ pre {
   border-radius: 0;
   padding: 8px;
   font-size: 12px;
+}
+
+.response-grid {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.docs-grid .row {
+  margin-bottom: 10px;
+}
+
+body[data-theme="dark"] pre {
+  background: #0a0a0a;
+  color: #fafafa;
+  border-color: #f1f1f1;
 }
 
 .hero,
@@ -304,5 +447,9 @@ pre {
 
   .hero-actions {
     justify-items: start;
+  }
+
+  .response-grid {
+    grid-template-columns: 1fr;
   }
 }
