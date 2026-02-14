@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 
 type ThemeMode = "light" | "dark";
 type ViewMode = "ops" | "docs";
+type OpsStage = "setup" | "run" | "monitor" | "ship";
 
 type Workspace = {
   id: string;
@@ -109,6 +110,7 @@ type ProviderValidation = {
 const PREFERRED_PORT = 4228;
 const MAX_PORT_SCAN = 10;
 const themeStorageKey = "silo-dashboard-theme";
+const debugSidebarStorageKey = "silo-dashboard-debug-collapsed";
 const daemonCacheKey = "silo-daemon-url";
 const isDev = import.meta.env.DEV;
 
@@ -229,6 +231,11 @@ async function apiPost<T>(path: string, payload: unknown): Promise<T> {
 export function App() {
   const [theme, setTheme] = useState<ThemeMode>(() => readInitialTheme());
   const [view, setView] = useState<ViewMode>("ops");
+  const [stage, setStage] = useState<OpsStage>("setup");
+  const [debugCollapsed, setDebugCollapsed] = useState<boolean>(() => {
+    if (typeof window === "undefined") return false;
+    return window.localStorage.getItem(debugSidebarStorageKey) === "1";
+  });
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [runs, setRuns] = useState<Run[]>([]);
   const [events, setEvents] = useState<RunEvent[]>([]);
@@ -270,6 +277,11 @@ export function App() {
   }, [theme]);
 
   useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(debugSidebarStorageKey, debugCollapsed ? "1" : "0");
+  }, [debugCollapsed]);
+
+  useEffect(() => {
     const wsBase = getDaemonBase().replace("http", "ws");
     const socket = new WebSocket(`${wsBase}/ws`);
     socket.onmessage = (message) => {
@@ -289,6 +301,12 @@ export function App() {
   }, [selectedRunId]);
 
   const totalRunning = useMemo(() => runs.filter((run) => run.status === "running").length, [runs]);
+  const stageLabel = useMemo(() => {
+    if (stage === "setup") return "1/4 Setup";
+    if (stage === "run") return "2/4 Run";
+    if (stage === "monitor") return "3/4 Monitor";
+    return "4/4 Ship";
+  }, [stage]);
   const cliDebugEvents = useMemo(
     () =>
       events
@@ -529,6 +547,11 @@ export function App() {
             {theme === "light" ? "Dark Mode" : "Light Mode"}
           </button>
           <button onClick={() => void refresh()}>Force Refresh</button>
+          {isDev && view === "ops" ? (
+            <button onClick={() => setDebugCollapsed((value) => !value)}>
+              {debugCollapsed ? "Show Debug" : "Hide Debug"}
+            </button>
+          ) : null}
           <div className="stamp">LIVE</div>
         </div>
       </header>
@@ -539,7 +562,22 @@ export function App() {
         <DocsView />
       ) : (
         <>
-          <section className="stats">
+          <section className="flow-strip frame">
+            <div className="flow-copy">
+              <p className="label">Lifecycle Flow</p>
+              <strong>{stageLabel}</strong>
+            </div>
+            <div className="flow-actions">
+              <button className={stage === "setup" ? "active" : ""} onClick={() => setStage("setup")}>Setup</button>
+              <button className={stage === "run" ? "active" : ""} onClick={() => setStage("run")}>Run</button>
+              <button className={stage === "monitor" ? "active" : ""} onClick={() => setStage("monitor")}>Monitor</button>
+              <button className={stage === "ship" ? "active" : ""} onClick={() => setStage("ship")}>Ship</button>
+            </div>
+          </section>
+
+          <div className={`ops-shell ${isDev ? "with-debug" : ""} ${debugCollapsed ? "debug-collapsed" : ""}`}>
+            <div className="ops-main">
+              <section className="stats">
             <article className="stat frame">
               <h2>Workspaces</h2>
               <strong>{workspaces.length}</strong>
@@ -556,10 +594,10 @@ export function App() {
               <h2>Queued</h2>
               <strong>{queue?.queued.length ?? 0}</strong>
             </article>
-          </section>
+              </section>
 
-          <section className="grid">
-            <div className="panel frame">
+              <section className="grid">
+            {(stage === "setup" || stage === "run") ? <div className="panel frame">
               <h3>Create workspace</h3>
               <div className="form-grid">
                 <input
@@ -603,9 +641,9 @@ export function App() {
                   </div>
                 </div>
               ))}
-            </div>
+            </div> : null}
 
-            <div className="panel frame">
+            {(stage === "run" || stage === "monitor") ? <div className="panel frame">
               <h3>Run + timeline</h3>
               <div className="form-grid">
                 <select
@@ -676,7 +714,7 @@ export function App() {
                   {run.sessionId ? <small>session: {run.sessionId.slice(0, 16)}...</small> : null}
                 </div>
               ))}
-            </div>
+            </div> : null}
 
             {focusedRun ? (
               <div className="panel wide frame">
@@ -728,7 +766,7 @@ export function App() {
               </div>
             ) : null}
 
-            <div className="panel frame">
+            {(stage === "run" || stage === "monitor") ? <div className="panel frame">
               <h3>Queue controls</h3>
               <small>
                 Active: {queue?.activeCount ?? 0} / {queue?.config.maxConcurrentRuns ?? 0}
@@ -779,9 +817,9 @@ export function App() {
                   <small className={`pill priority-${job.priority}`}>{job.priority.toUpperCase()}</small>
                 </div>
               ))}
-            </div>
+            </div> : null}
 
-            <div className="panel frame">
+            {(stage === "setup" || stage === "run") ? <div className="panel frame">
               <h3>Providers</h3>
               <small>Default: {profiles?.config.defaultProfile ?? "-"}</small>
               <small>File: {profiles?.filePath ?? "-"}</small>
@@ -828,9 +866,9 @@ export function App() {
                   ))}
                 </div>
               ) : null}
-            </div>
+            </div> : null}
 
-            <div className="panel frame">
+            {(stage === "ship" || stage === "setup") ? <div className="panel frame">
               <h3>Review + Ship</h3>
               <div className="form-grid">
                 <select
@@ -857,6 +895,7 @@ export function App() {
                 <button disabled={!reviewForm.workspaceSlug} onClick={() => void requestReview()}>
                   Run review
                 </button>
+                <button onClick={() => setStage("ship")}>Go to ship phase</button>
               </div>
 
               <div className="form-grid">
@@ -896,9 +935,9 @@ export function App() {
                   Ship workspace
                 </button>
               </div>
-            </div>
+            </div> : null}
 
-            <div className="panel frame">
+            {(stage === "ship" || stage === "monitor") ? <div className="panel frame">
               <h3>Gateway + Action URI</h3>
               <div className="actions">
                 <button onClick={() => void syncGateway()}>Sync gateway</button>
@@ -907,9 +946,9 @@ export function App() {
                 <input value={actionUri} onChange={(event) => setActionUri(event.target.value)} placeholder="silo://..." />
                 <button onClick={() => void executeAction()}>Execute action</button>
               </div>
-            </div>
+            </div> : null}
 
-            <div className="panel frame">
+            {(stage === "monitor" || stage === "ship") ? <div className="panel frame">
               <h3>Notifications</h3>
               {notifications.slice(0, 10).map((notification) => (
                 <div className="row" key={notification.id}>
@@ -935,9 +974,9 @@ export function App() {
                   </div>
                 </div>
               ))}
-            </div>
+            </div> : null}
 
-            <div className="panel wide frame">
+            {(stage === "monitor" || stage === "run") ? <div className="panel wide frame">
               <h3>Run timeline</h3>
               {timeline ? (
                 <>
@@ -956,9 +995,9 @@ export function App() {
               ) : (
                 <small>Select a run to inspect tool timeline.</small>
               )}
-            </div>
+            </div> : null}
 
-            <div className="panel wide frame">
+            {(stage === "ship" || stage === "monitor") ? <div className="panel wide frame">
               <h3>Responses</h3>
               <div className="response-grid">
                 <div>
@@ -978,16 +1017,16 @@ export function App() {
                   <pre>{actionResult ? JSON.stringify(actionResult, null, 2) : "-"}</pre>
                 </div>
               </div>
-            </div>
+            </div> : null}
 
-            <div className="panel wide frame">
+            {stage === "monitor" ? <div className="panel wide frame">
               <h3>Live websocket feed</h3>
               {live.map((entry, index) => (
                 <pre key={`${entry}-${index}`}>{entry}</pre>
               ))}
-            </div>
+            </div> : null}
 
-            <div className="panel wide frame">
+            {stage === "monitor" ? <div className="panel wide frame">
               <h3>Recent events</h3>
               {events.slice(0, 20).map((event) => (
                 <div className="row" key={event.id}>
@@ -996,19 +1035,31 @@ export function App() {
                   <small>{new Date(event.ts).toLocaleTimeString()}</small>
                 </div>
               ))}
+            </div> : null}
+
+              </section>
             </div>
 
             {isDev ? (
-              <div className="panel wide frame">
-                <h3>Dev debug (cli.exec)</h3>
-                {cliDebugEvents.length === 0 ? (
-                  <small>No CLI debug events yet.</small>
+              <aside className={`debug-sidebar frame ${debugCollapsed ? "collapsed" : ""}`}>
+                <div className="debug-head">
+                  <h3>Dev debug (cli.exec)</h3>
+                  <button onClick={() => setDebugCollapsed((value) => !value)}>
+                    {debugCollapsed ? "Expand" : "Collapse"}
+                  </button>
+                </div>
+                {!debugCollapsed ? (
+                  cliDebugEvents.length === 0 ? (
+                    <small>No CLI debug events yet.</small>
+                  ) : (
+                    <pre>{JSON.stringify(cliDebugEvents, null, 2)}</pre>
+                  )
                 ) : (
-                  <pre>{JSON.stringify(cliDebugEvents, null, 2)}</pre>
+                  <small>Debug stream hidden.</small>
                 )}
-              </div>
+              </aside>
             ) : null}
-          </section>
+          </div>
         </>
       )}
     </div>

@@ -199,6 +199,42 @@ label {
   margin-bottom: 14px;
 }
 
+.flow-strip {
+  margin-bottom: 14px;
+  padding: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.flow-copy {
+  display: grid;
+  gap: 2px;
+}
+
+.flow-copy strong {
+  font-family: "Bebas Neue", Impact, sans-serif;
+  font-size: 1.4rem;
+  letter-spacing: 0.04em;
+}
+
+.flow-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.flow-actions button {
+  background: var(--button-muted-bg);
+  color: var(--button-muted-text);
+}
+
+.flow-actions button.active {
+  background: var(--accent);
+  color: var(--button-text);
+}
+
 .stat {
   padding: 12px;
 }
@@ -222,6 +258,54 @@ label {
   display: grid;
   gap: 12px;
   grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.ops-shell {
+  display: block;
+}
+
+.ops-shell.with-debug {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(0, 1fr) 340px;
+  align-items: start;
+}
+
+.ops-shell.with-debug.debug-collapsed {
+  grid-template-columns: minmax(0, 1fr) 120px;
+}
+
+.ops-main {
+  min-width: 0;
+}
+
+.debug-sidebar {
+  position: sticky;
+  top: 22px;
+  max-height: calc(100vh - 34px);
+  overflow: auto;
+  padding: 12px;
+}
+
+.debug-sidebar.collapsed {
+  overflow: hidden;
+}
+
+.debug-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.debug-head button {
+  background: var(--button-muted-bg);
+  color: var(--button-muted-text);
+}
+
+.debug-sidebar h3 {
+  margin-top: 0;
+  margin-bottom: 8px;
 }
 
 .panel {
@@ -429,6 +513,20 @@ body[data-theme="dark"] pre {
 }
 
 @media (max-width: 980px) {
+  .ops-shell.with-debug {
+    grid-template-columns: 1fr;
+  }
+
+  .debug-sidebar {
+    position: static;
+    max-height: none;
+  }
+
+  .flow-strip {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
   .stats {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
