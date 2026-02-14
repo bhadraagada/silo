@@ -18,6 +18,16 @@ export interface NotifyOptions {
   body: string;
 }
 
+type TerminalBackend = "tmux" | "zellij" | "none";
+
+export interface TerminalSessionResult {
+  backend: TerminalBackend;
+  attempted: boolean;
+  created: boolean;
+  focused: boolean;
+  reason?: string;
+}
+
 export function ensureSiloDirs(): { rootDir: string; profileRoot: string; dbPath: string } {
   const rootDir = join(homedir(), ".silo");
   const profileRoot = join(rootDir, "profiles");
@@ -79,19 +89,23 @@ export function notify(options: NotifyOptions): void {
   }
 }
 
-export function switchToTerminalSession(session: string): void {
-  if (process.platform === "darwin") {
-    Bun.spawn(["osascript", "-e", `tell application \"Terminal\" to activate`]);
-    return;
+export function switchToTerminalSession(session: string, cwd?: string): TerminalSessionResult {
+  const backend = resolveTerminalBackend();
+  if (backend === "none") {
+    return {
+      backend,
+      attempted: false,
+      created: false,
+      focused: false,
+      reason: "No supported terminal backend found (tmux/zellij)",
+    };
   }
-  if (process.platform === "linux") {
-    Bun.spawn(["sh", "-lc", "true"]);
-    return;
+
+  if (backend === "tmux") {
+    return switchTmuxSession(session, cwd);
   }
-  if (process.platform === "win32") {
-    Bun.spawn(["powershell", "-NoProfile", "-Command", "Write-Output \"focus terminal\""]);
-  }
-  void session;
+
+  return switchZellijSession(session);
 }
 
 function openUrlWithSystemBrowser(url: string): void {
@@ -135,6 +149,104 @@ function browserArgs(command: string, url: string, profilePath: string): string[
     return [command, "-profile", profilePath, "-new-window", url];
   }
   return [command, url];
+}
+
+function switchTmuxSession(session: string, cwd?: string): TerminalSessionResult {
+  const exists = runCommand(["tmux", "has-session", "-t", session]).ok;
+  let created = false;
+
+  if (!exists) {
+    const createArgs = cwd
+      ? ["tmux", "new-session", "-d", "-s", session, "-c", cwd]
+      : ["tmux", "new-session", "-d", "-s", session];
+    const createResult = runCommand(createArgs);
+    if (!createResult.ok) {
+      return {
+        backend: "tmux",
+        attempted: true,
+        created: false,
+        focused: false,
+        reason: "Failed to create tmux session",
+      };
+    }
+    created = true;
+  }
+
+  if (!process.env.TMUX) {
+    return {
+      backend: "tmux",
+      attempted: true,
+      created,
+      focused: false,
+      reason: "tmux session ensured; not currently inside tmux client",
+    };
+  }
+
+  const focused = runCommand(["tmux", "switch-client", "-t", session]).ok;
+  return {
+    backend: "tmux",
+    attempted: true,
+    created,
+    focused,
+    reason: focused ? undefined : "Failed to focus tmux session",
+  };
+}
+
+function switchZellijSession(session: string): TerminalSessionResult {
+  if (!process.env.ZELLIJ) {
+    return {
+      backend: "zellij",
+      attempted: false,
+      created: false,
+      focused: false,
+      reason: "zellij detected but daemon is not running inside zellij",
+    };
+  }
+
+  const focused = runCommand(["zellij", "action", "switch-session", session]).ok;
+  return {
+    backend: "zellij",
+    attempted: true,
+    created: false,
+    focused,
+    reason: focused ? undefined : "Failed to focus zellij session",
+  };
+}
+
+function resolveTerminalBackend(): TerminalBackend {
+  const override = (process.env.SILO_TERMINAL_BACKEND ?? "auto").toLowerCase();
+  if (override === "none") return "none";
+  if (override === "tmux") return commandExists("tmux") ? "tmux" : "none";
+  if (override === "zellij") return commandExists("zellij") ? "zellij" : "none";
+
+  if (commandExists("tmux")) return "tmux";
+  if (commandExists("zellij")) return "zellij";
+  return "none";
+}
+
+function commandExists(command: string): boolean {
+  const checker = process.platform === "win32" ? "where" : "which";
+  try {
+    const result = Bun.spawnSync([checker, command], {
+      stdout: "ignore",
+      stderr: "ignore",
+    });
+    return result.exitCode === 0;
+  } catch {
+    return false;
+  }
+}
+
+function runCommand(args: string[]): { ok: boolean } {
+  try {
+    const result = Bun.spawnSync(args, {
+      stdout: "ignore",
+      stderr: "ignore",
+    });
+    return { ok: result.exitCode === 0 };
+  } catch {
+    return { ok: false };
+  }
 }
 
 export interface DaemonInfo {

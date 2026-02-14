@@ -91,6 +91,13 @@ You can override args per profile with `silo profiles set ... --settings`.
 - Dashboard shows replay/debug timeline per run by pairing `tool.started` and `tool.finished` events.
 - In dashboard dev mode only, an extra `cli.exec` debug panel is shown for command-provider runs.
 
+## Terminal session orchestration
+
+- `switch`/`up` now attempt terminal session routing through tmux/zellij adapters.
+- Backend selection uses `SILO_TERMINAL_BACKEND` with values `auto` (default), `tmux`, `zellij`, `none`.
+- `auto` prefers `tmux` first, then `zellij`, and safely no-ops if neither is installed.
+- tmux integration ensures a per-workspace session exists and switches client when running inside tmux.
+
 ## Current status
 
 This repository contains a production-oriented scaffold and working MVP flows for local workspace orchestration.

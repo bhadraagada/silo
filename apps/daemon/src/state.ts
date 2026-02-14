@@ -142,6 +142,7 @@ export class DaemonState {
 
     launchEditor({ path: saved.worktreePath });
     launchBrowser({ url: workspaceUrl(saved), profilePath: saved.browserProfilePath });
+    switchToTerminalSession(saved.slug, saved.worktreePath);
     notify({
       title: `silo: ${saved.slug}`,
       body: `Workspace ready at ${saved.domain}`,
@@ -164,7 +165,7 @@ export class DaemonState {
 
     launchEditor({ path: saved.worktreePath });
     launchBrowser({ url: workspaceUrl(saved), profilePath: saved.browserProfilePath });
-    switchToTerminalSession(saved.slug);
+    switchToTerminalSession(saved.slug, saved.worktreePath);
 
     this.repo.addEvent({
       runId: "system",

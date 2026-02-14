@@ -61,6 +61,7 @@ Operational memory for building and extending `silo`.
 - 2026-02-11: Added standalone `web` Vite+React+TS+Tailwind marketing app for `silo` with five creative route variants (`/1` to `/5`) on port `4000`.
 - 2026-02-14: Added DB migration support for existing databases (`ALTER TABLE` for `session_id`, `parent_run_id` columns).
 - 2026-02-14: Added `silo continue <run-id> --prompt "..."` CLI command for session continuation.
+- 2026-02-14: Added initial terminal session orchestration via tmux/zellij-aware adapter routing on workspace up/switch.
 - 2026-02-12: Expanded `web` landing pages to 10 brutalist-style variants (`/1` to `/10`), each with distinct aesthetic and messaging:
   - `/1`: Signal Brutalist (warm, raw control aesthetic)
   - `/2`: Neon Terminal (neon cyan/teal cyberpunk vibes)
