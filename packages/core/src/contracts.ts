@@ -12,6 +12,7 @@ export const runWorkspaceSchema = z.object({
   prompt: z.string().min(1),
   profile: z.string().min(1).optional(),
   priority: z.enum(["low", "normal", "high"]).default("normal"),
+  continueRunId: z.string().min(1).optional(),
 });
 
 export const notifySchema = z.object({

@@ -29,6 +29,8 @@ export const schemaStatements = [
       prompt TEXT NOT NULL,
       status TEXT NOT NULL,
       summary TEXT NOT NULL,
+      session_id TEXT,
+      parent_run_id TEXT,
       token_input INTEGER NOT NULL DEFAULT 0,
       token_output INTEGER NOT NULL DEFAULT 0,
       cost_usd REAL NOT NULL DEFAULT 0,
@@ -57,4 +59,13 @@ export const schemaStatements = [
       created_at TEXT NOT NULL,
       FOREIGN KEY(workspace_id) REFERENCES workspaces(id)
     );`,
+];
+
+/**
+ * Migrations for existing databases created before new columns were added.
+ * Each statement is run in a try/catch so already-applied migrations are safe to skip.
+ */
+export const migrationStatements = [
+  `ALTER TABLE runs ADD COLUMN session_id TEXT;`,
+  `ALTER TABLE runs ADD COLUMN parent_run_id TEXT;`,
 ];

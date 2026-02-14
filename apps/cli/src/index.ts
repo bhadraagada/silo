@@ -1,6 +1,8 @@
+import { resolveDaemonUrl } from "@silo/os-adapters";
+
 type JsonRecord = Record<string, unknown>;
 
-const daemonBase = process.env.SILO_DAEMON_URL ?? "http://127.0.0.1:4228";
+const daemonBase = resolveDaemonUrl();
 
 async function request(path: string, init?: RequestInit): Promise<JsonRecord> {
   const response = await fetch(`${daemonBase}${path}`, {
@@ -31,6 +33,7 @@ function printHelp(): void {
   silo list
   silo switch <workspace-slug>
   silo run <workspace-slug> --prompt "do something" [--provider mock] [--profile default] [--priority high|normal|low]
+  silo continue <run-id> --prompt "follow-up prompt" [--priority high|normal|low]
   silo runs [--workspace <workspace-slug>]
   silo events [--run <run-id>]
   silo notifications [--workspace <workspace-slug>]
@@ -108,6 +111,44 @@ async function main(): Promise<void> {
     const payload = await request("/api/runs", {
       method: "POST",
       body: JSON.stringify({ workspaceSlug, provider, prompt, profile, priority }),
+    });
+    output(payload.data);
+    return;
+  }
+
+  if (command === "continue") {
+    const continueRunId = rest[0];
+    const prompt = getArg("--prompt");
+    const priority = getArg("--priority") ?? "normal";
+    if (!continueRunId || !prompt) {
+      throw new Error("Usage: silo continue <run-id> --prompt \"follow-up prompt\" [--priority high|normal|low]");
+    }
+
+    // Look up the original run to get workspace and provider
+    const [runLookup, workspaceLookup] = await Promise.all([
+      request("/api/runs"),
+      request("/api/workspaces"),
+    ]);
+    const runs = runLookup.data as Array<JsonRecord>;
+    const workspaces = workspaceLookup.data as Array<JsonRecord>;
+    const parentRun = runs.find((r: JsonRecord) => r.id === continueRunId);
+    if (!parentRun) {
+      throw new Error(`Run not found: ${continueRunId}`);
+    }
+    const workspace = workspaces.find((w: JsonRecord) => w.id === parentRun.workspaceId);
+    if (!workspace) {
+      throw new Error(`Workspace not found for run: ${continueRunId}`);
+    }
+
+    const payload = await request("/api/runs", {
+      method: "POST",
+      body: JSON.stringify({
+        workspaceSlug: workspace.slug,
+        provider: parentRun.provider,
+        prompt,
+        priority,
+        continueRunId,
+      }),
     });
     output(payload.data);
     return;

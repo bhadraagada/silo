@@ -115,8 +115,8 @@ export class SiloRepository {
     };
     this.db
       .query(
-        `INSERT INTO runs (id, workspace_id, provider, prompt, status, summary, token_input, token_output, cost_usd, started_at, ended_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        `INSERT INTO runs (id, workspace_id, provider, prompt, status, summary, session_id, parent_run_id, token_input, token_output, cost_usd, started_at, ended_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
       .run(
         run.id,
@@ -125,6 +125,8 @@ export class SiloRepository {
         run.prompt,
         run.status,
         run.summary,
+        run.sessionId,
+        run.parentRunId,
         run.tokenInput,
         run.tokenOutput,
         run.costUsd,
@@ -138,10 +140,10 @@ export class SiloRepository {
     this.db
       .query(
         `UPDATE runs
-         SET status = ?, summary = ?, token_input = ?, token_output = ?, cost_usd = ?, ended_at = ?
+         SET status = ?, summary = ?, session_id = ?, token_input = ?, token_output = ?, cost_usd = ?, ended_at = ?
          WHERE id = ?`
       )
-      .run(run.status, run.summary, run.tokenInput, run.tokenOutput, run.costUsd, run.endedAt, run.id);
+      .run(run.status, run.summary, run.sessionId, run.tokenInput, run.tokenOutput, run.costUsd, run.endedAt, run.id);
   }
 
   getRunById(runId: string): AgentRun | null {
@@ -254,6 +256,8 @@ export class SiloRepository {
       prompt: String(row.prompt),
       status: String(row.status) as AgentRun["status"],
       summary: String(row.summary),
+      sessionId: row.session_id ? String(row.session_id) : null,
+      parentRunId: row.parent_run_id ? String(row.parent_run_id) : null,
       tokenInput: Number(row.token_input),
       tokenOutput: Number(row.token_output),
       costUsd: Number(row.cost_usd),

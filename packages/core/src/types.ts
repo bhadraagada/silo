@@ -44,6 +44,8 @@ export interface AgentRun {
   prompt: string;
   status: RunStatus;
   summary: string;
+  sessionId: string | null;
+  parentRunId: string | null;
   tokenInput: number;
   tokenOutput: number;
   costUsd: number;
@@ -83,6 +85,7 @@ export interface RunWorkspaceInput {
   prompt: string;
   profile?: string;
   priority?: "low" | "normal" | "high";
+  continueRunId?: string;
 }
 
 export interface WorkspaceRuntimeTarget {

@@ -218,6 +218,7 @@ export class DaemonState {
         Array.isArray(settings.args) && settings.args.every((item) => typeof item === "string")
           ? (settings.args as string[])
           : undefined,
+      timeoutMs: typeof settings.timeoutMs === "number" ? settings.timeoutMs : undefined,
     };
     return {
       filePath: providersFilePath(),
@@ -322,12 +323,24 @@ export class DaemonState {
     }
 
     const priority = input.priority ?? "normal";
+    let parentSessionId: string | null = null;
+    let parentRunId: string | null = null;
+    if (input.continueRunId) {
+      const parentRun = this.repo.getRunById(input.continueRunId);
+      if (parentRun) {
+        parentSessionId = parentRun.sessionId;
+        parentRunId = parentRun.id;
+      }
+    }
+
     const run = this.repo.createRun({
       workspaceId: workspace.id,
       provider: input.provider,
       prompt: input.prompt,
       status: "queued",
-      summary: `Queued (${priority})`,
+      summary: parentRunId ? `Continue of ${parentRunId.slice(0, 8)} (${priority})` : `Queued (${priority})`,
+      sessionId: parentSessionId,
+      parentRunId,
       tokenInput: 0,
       tokenOutput: 0,
       costUsd: 0,
@@ -540,6 +553,8 @@ export class DaemonState {
           prompt: job.input.prompt,
           provider: job.input.provider,
           providerConfig,
+          continueSessionId: running.sessionId ?? undefined,
+          parentRunId: running.parentRunId ?? undefined,
         },
         (event) => {
           const savedEvent = this.repo.addEvent({
@@ -556,6 +571,7 @@ export class DaemonState {
         ...running,
         status: "completed",
         summary: result.summary,
+        sessionId: result.sessionId ?? running.sessionId,
         tokenInput: result.tokenInput,
         tokenOutput: result.tokenOutput,
         costUsd: result.costUsd,

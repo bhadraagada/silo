@@ -11,6 +11,7 @@ export type ProviderSettings = {
   maxTokens?: number;
   command?: string;
   args?: string[];
+  timeoutMs?: number;
 };
 
 export interface ProviderProfile {
@@ -31,6 +32,7 @@ export interface ResolvedProviderConfig {
   maxTokens?: number;
   command?: string;
   args?: string[];
+  timeoutMs?: number;
 }
 
 const profilesPath = join(ensureSiloDirs().rootDir, "providers.json");
@@ -42,7 +44,11 @@ export function loadProfiles(): ProviderProfilesConfig {
   if (!parsed.defaultProfile || !parsed.profiles) {
     throw new Error("Invalid providers.json format");
   }
-  return parsed;
+  const migrated = applyProfileMigrations(parsed);
+  if (migrated.updated) {
+    saveProfiles(migrated.config);
+  }
+  return migrated.config;
 }
 
 export function saveProfiles(config: ProviderProfilesConfig): void {
@@ -70,6 +76,7 @@ export function resolveProviderConfig(provider: string, profileName?: string): R
     maxTokens: settings.maxTokens,
     command: settings.command,
     args: settings.args,
+    timeoutMs: settings.timeoutMs,
   };
 }
 
@@ -141,18 +148,82 @@ function defaultProfiles(): ProviderProfilesConfig {
           },
           codex: {
             command: "codex",
-            args: [],
+            args: ["exec", "--dangerously-bypass-approvals-and-sandbox", "{prompt}"],
           },
           claude: {
             command: "claude",
-            args: [],
+            args: [
+              "-p",
+              "{prompt}",
+              "--allow-dangerously-skip-permissions",
+              "--dangerously-skip-permissions",
+              "--permission-mode",
+              "bypassPermissions",
+            ],
           },
           opencode: {
             command: "opencode",
-            args: [],
+            args: ["run", "--format", "json", "{prompt}"],
           },
         },
       },
     },
   };
+}
+
+function applyProfileMigrations(config: ProviderProfilesConfig): { config: ProviderProfilesConfig; updated: boolean } {
+  let updated = false;
+  const profiles: Record<string, ProviderProfile> = {};
+
+  for (const [name, profile] of Object.entries(config.profiles)) {
+    const providers = { ...profile.providers };
+
+    const codex = providers.codex;
+    if (codex && shouldMigrateArgs(codex.args, ["--yolo"])) {
+      providers.codex = { ...codex, args: ["exec", "--dangerously-bypass-approvals-and-sandbox", "{prompt}"] };
+      updated = true;
+    }
+
+    const claude = providers.claude;
+    if (claude && shouldMigrateArgs(claude.args, [])) {
+      providers.claude = {
+        ...claude,
+        args: [
+          "-p",
+          "{prompt}",
+          "--allow-dangerously-skip-permissions",
+          "--dangerously-skip-permissions",
+          "--permission-mode",
+          "bypassPermissions",
+        ],
+      };
+      updated = true;
+    }
+
+    const opencode = providers.opencode;
+    if (opencode && shouldMigrateArgs(opencode.args, ["--yolo"])) {
+      providers.opencode = { ...opencode, args: ["run", "--format", "json", "{prompt}"] };
+      updated = true;
+    }
+
+    profiles[name] = {
+      ...profile,
+      providers,
+    };
+  }
+
+  return {
+    config: {
+      ...config,
+      profiles,
+    },
+    updated,
+  };
+}
+
+function shouldMigrateArgs(existing: string[] | undefined, legacyTokens: string[]): boolean {
+  if (!Array.isArray(existing) || existing.length === 0) {
+    return true;
+  }
+  return legacyTokens.some((token) => existing.includes(token));
 }
