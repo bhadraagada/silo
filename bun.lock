@@ -18,6 +18,7 @@
       },
       "dependencies": {
         "@silo/core": "workspace:*",
+        "@silo/os-adapters": "workspace:*",
       },
     },
     "apps/daemon": {

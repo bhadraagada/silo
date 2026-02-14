@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
@@ -41,14 +41,23 @@ export function launchBrowser(options: LaunchBrowserOptions): void {
     mkdirSync(options.profilePath, { recursive: true });
   }
 
-  const browser = options.browserCommand ?? defaultBrowserCommand();
-  const args = browserArgs(browser, options.url, options.profilePath);
-  Bun.spawn(args, {
-    stderr: "ignore",
-    stdout: "ignore",
-    stdin: "ignore",
-    detached: true,
-  });
+  const explicitBrowser = options.browserCommand ?? process.env.SILO_BROWSER_COMMAND;
+  if (!explicitBrowser) {
+    openUrlWithSystemBrowser(options.url);
+    return;
+  }
+
+  const args = browserArgs(explicitBrowser, options.url, options.profilePath);
+  try {
+    Bun.spawn(args, {
+      stderr: "ignore",
+      stdout: "ignore",
+      stdin: "ignore",
+      detached: true,
+    });
+  } catch {
+    openUrlWithSystemBrowser(options.url);
+  }
 }
 
 export function notify(options: NotifyOptions): void {
@@ -85,10 +94,37 @@ export function switchToTerminalSession(session: string): void {
   void session;
 }
 
-function defaultBrowserCommand(): string {
-  if (process.platform === "darwin") return "google-chrome";
-  if (process.platform === "linux") return "google-chrome";
-  return "chrome";
+function openUrlWithSystemBrowser(url: string): void {
+  try {
+    if (process.platform === "win32") {
+      Bun.spawn(["cmd", "/c", "start", "", url], {
+        stderr: "ignore",
+        stdout: "ignore",
+        stdin: "ignore",
+        detached: true,
+      });
+      return;
+    }
+
+    if (process.platform === "darwin") {
+      Bun.spawn(["open", url], {
+        stderr: "ignore",
+        stdout: "ignore",
+        stdin: "ignore",
+        detached: true,
+      });
+      return;
+    }
+
+    Bun.spawn(["xdg-open", url], {
+      stderr: "ignore",
+      stdout: "ignore",
+      stdin: "ignore",
+      detached: true,
+    });
+  } catch {
+    // no-op fallback to avoid crashing daemon on browser launch failures
+  }
 }
 
 function browserArgs(command: string, url: string, profilePath: string): string[] {
@@ -99,6 +135,45 @@ function browserArgs(command: string, url: string, profilePath: string): string[
     return [command, "-profile", profilePath, "-new-window", url];
   }
   return [command, url];
+}
+
+export interface DaemonInfo {
+  host: string;
+  port: number;
+  url: string;
+  pid: number;
+  startedAt: string;
+}
+
+const daemonJsonPath = () => join(ensureSiloDirs().rootDir, "daemon.json");
+
+export function writeDaemonInfo(info: DaemonInfo): void {
+  writeFileSync(daemonJsonPath(), `${JSON.stringify(info, null, 2)}\n`, "utf8");
+}
+
+export function readDaemonInfo(): DaemonInfo | null {
+  const filePath = daemonJsonPath();
+  if (!existsSync(filePath)) return null;
+  try {
+    const raw = readFileSync(filePath, "utf8");
+    const parsed = JSON.parse(raw) as DaemonInfo;
+    if (parsed && typeof parsed.url === "string" && typeof parsed.port === "number") {
+      return parsed;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+export function resolveDaemonUrl(): string {
+  const envUrl = process.env.SILO_DAEMON_URL;
+  if (envUrl) return envUrl;
+
+  const info = readDaemonInfo();
+  if (info) return info.url;
+
+  return "http://127.0.0.1:4228";
 }
 
 function safeApple(value: string): string {
