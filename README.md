@@ -60,6 +60,20 @@ and key env mapping (or direct key where needed).
 `profiles validate` performs provider health checks including key resolution, CLI binary availability,
 and small connectivity checks against provider APIs.
 
+### Execution policy
+
+- Runtime uses YOLO execution policy by default for agent runs (avoid permission-seeking loops).
+- API adapters prepend a non-interactive instruction to execute directly.
+- Command adapters pass `SILO_APPROVAL_POLICY=never` and `SILO_YOLO_MODE=1` env vars.
+
+For command providers, default profile args are configured for non-interactive execution:
+
+- `codex`: `exec --dangerously-bypass-approvals-and-sandbox {prompt}`
+- `claude`: `-p {prompt} --allow-dangerously-skip-permissions --dangerously-skip-permissions --permission-mode bypassPermissions`
+- `opencode`: `run --format json {prompt}`
+
+You can override args per profile with `silo profiles set ... --settings`.
+
 ## Gateway output
 
 - Generated local routing configs are written to:
@@ -75,6 +89,7 @@ and small connectivity checks against provider APIs.
 - Daemon includes a scheduler with priorities (`high`, `normal`, `low`) and concurrency controls.
 - Supports workspace queue pause/resume/cancel and expensive-provider throttling.
 - Dashboard shows replay/debug timeline per run by pairing `tool.started` and `tool.finished` events.
+- In dashboard dev mode only, an extra `cli.exec` debug panel is shown for command-provider runs.
 
 ## Current status
 
@@ -83,3 +98,17 @@ This repository contains a production-oriented scaffold and working MVP flows fo
 ## Testing
 
 Use `TESTING.md` for the full end-to-end validation checklist.
+
+Automated unit tests live in package-level `tests/` folders (for example,
+`packages/core/tests`). Run all tests with:
+
+- `bun run test`
+
+## Open source
+
+- License: MIT (`LICENSE`)
+- Contributing guide: `CONTRIBUTING.md`
+- Code of conduct: `CODE_OF_CONDUCT.md`
+- Security policy: `SECURITY.md`
+
+GitHub CI is configured in `.github/workflows/ci.yml`.

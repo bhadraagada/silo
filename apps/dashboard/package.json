@@ -9,7 +9,7 @@
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "lint": "bunx tsc --noEmit",
-    "test": "bun test",
+    "test": "bun test --pass-with-no-tests",
     "format": "bunx prettier --check ."
   },
   "dependencies": {

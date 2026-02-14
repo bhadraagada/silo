@@ -185,6 +185,7 @@ From monorepo root:
 
 ```bash
 bun run typecheck
+bun run test
 bun run build
 ```
 

@@ -8,7 +8,7 @@
     "build": "bun build src/index.ts --outdir dist --target bun",
     "typecheck": "tsc --noEmit",
     "lint": "bunx tsc --noEmit",
-    "test": "bun test",
+    "test": "bun test --pass-with-no-tests",
     "format": "bunx prettier --check ."
   },
   "dependencies": {
