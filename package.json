@@ -1,0 +1,25 @@
+{
+  "name": "silo",
+  "private": true,
+  "packageManager": "bun@1.2.21",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "turbo run dev --parallel",
+    "build": "turbo run build",
+    "typecheck": "turbo run typecheck",
+    "lint": "turbo run lint",
+    "test": "turbo run test",
+    "format": "turbo run format",
+    "daemon": "bun run --cwd apps/daemon dev",
+    "cli": "bun run --cwd apps/cli dev"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@types/node": "^22.15.30",
+    "turbo": "^2.5.5",
+    "typescript": "^5.8.3"
+  }
+}
