@@ -26,6 +26,7 @@ export interface RunContext {
   providerConfig?: ProviderRuntimeConfig;
   continueSessionId?: string;
   parentRunId?: string;
+  abortSignal?: AbortSignal;
 }
 
 export interface RunResult {
@@ -42,13 +43,15 @@ export interface AgentAdapter {
 
 class MockAgentAdapter implements AgentAdapter {
   async run(context: RunContext, onEvent: (event: AgentEvent) => void): Promise<RunResult> {
+    throwIfAborted(context.abortSignal);
     const isContinue = Boolean(context.continueSessionId);
     onEvent(event("run.started", { provider: context.provider, prompt: context.prompt, continue: isContinue }));
     onEvent(event("tool.started", { tool: "analysis", step: "inspect workspace" }));
-    await Bun.sleep(200);
+    await sleepWithAbort(200, context.abortSignal);
     onEvent(event("tool.finished", { tool: "analysis", ok: true }));
     onEvent(event("llm.usage", { input: 280, output: 540, model: "mock" }));
-    await Bun.sleep(300);
+    await sleepWithAbort(300, context.abortSignal);
+    throwIfAborted(context.abortSignal);
     onEvent(event("run.completed", { result: "Changes drafted and validated." }));
     return {
       summary: isContinue
@@ -64,6 +67,7 @@ class MockAgentAdapter implements AgentAdapter {
 
 class OpenAIAdapter implements AgentAdapter {
   async run(context: RunContext, onEvent: (eventObj: AgentEvent) => void): Promise<RunResult> {
+    throwIfAborted(context.abortSignal);
     const apiKey = context.providerConfig?.apiKey;
     if (!apiKey) {
       throw new Error("OpenAI API key missing. Configure provider profile or set OPENAI_API_KEY.");
@@ -79,6 +83,7 @@ class OpenAIAdapter implements AgentAdapter {
         authorization: `Bearer ${apiKey}`,
         "content-type": "application/json",
       },
+      signal: context.abortSignal,
       body: JSON.stringify({
         model,
         input: withYoloInstruction(context.prompt),
@@ -117,6 +122,7 @@ class OpenAIAdapter implements AgentAdapter {
 
 class AnthropicAdapter implements AgentAdapter {
   async run(context: RunContext, onEvent: (eventObj: AgentEvent) => void): Promise<RunResult> {
+    throwIfAborted(context.abortSignal);
     const apiKey = context.providerConfig?.apiKey;
     if (!apiKey) {
       throw new Error("Anthropic API key missing. Configure provider profile or set ANTHROPIC_API_KEY.");
@@ -134,6 +140,7 @@ class AnthropicAdapter implements AgentAdapter {
         "anthropic-version": "2023-06-01",
         "content-type": "application/json",
       },
+      signal: context.abortSignal,
       body: JSON.stringify({
         model,
         max_tokens: maxTokens,
@@ -176,6 +183,7 @@ class CommandAgentAdapter implements AgentAdapter {
   constructor(private readonly providerName: string) {}
 
   async run(context: RunContext, onEvent: (eventObj: AgentEvent) => void): Promise<RunResult> {
+    throwIfAborted(context.abortSignal);
     const command = context.providerConfig?.command ?? this.providerName;
     const templateArgs = context.providerConfig?.args ?? [];
     const isContinue = Boolean(context.continueSessionId);
@@ -238,7 +246,33 @@ class CommandAgentAdapter implements AgentAdapter {
     const stdoutPromise = new Response(proc.stdout).text();
     const stderrPromise = new Response(proc.stderr).text();
     const timeout = Bun.sleep(timeoutMs).then(() => "timeout" as const);
-    const exitOrTimeout = await Promise.race([proc.exited.then(() => "exit" as const), timeout]);
+    let cleanupAbort = () => {};
+    const aborted = new Promise<"aborted">((resolve) => {
+      const signal = context.abortSignal;
+      if (!signal) {
+        return;
+      }
+
+      const onAbort = () => {
+        try {
+          proc.kill();
+        } catch {
+          // ignore
+        }
+        resolve("aborted");
+      };
+
+      if (signal.aborted) {
+        onAbort();
+        return;
+      }
+
+      signal.addEventListener("abort", onAbort, { once: true });
+      cleanupAbort = () => signal.removeEventListener("abort", onAbort);
+    });
+
+    const exitOrTimeout = await Promise.race([proc.exited.then(() => "exit" as const), timeout, aborted]);
+    cleanupAbort();
 
     if (exitOrTimeout === "timeout") {
       try {
@@ -247,6 +281,10 @@ class CommandAgentAdapter implements AgentAdapter {
         // ignore
       }
       throw new Error(`${this.providerName} CLI timed out after ${timeoutMs}ms`);
+    }
+
+    if (exitOrTimeout === "aborted") {
+      throw new Error("Run cancelled");
     }
 
     const [stdout, stderr, exitCode] = await Promise.all([stdoutPromise, stderrPromise, proc.exited]);
@@ -545,6 +583,35 @@ function withYoloInstruction(prompt: string): string {
     "",
     prompt,
   ].join("\n");
+}
+
+function throwIfAborted(signal?: AbortSignal): void {
+  if (signal?.aborted) {
+    throw new Error("Run cancelled");
+  }
+}
+
+async function sleepWithAbort(ms: number, signal?: AbortSignal): Promise<void> {
+  throwIfAborted(signal);
+  if (!signal) {
+    await Bun.sleep(ms);
+    return;
+  }
+
+  await new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      signal.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+
+    const onAbort = () => {
+      clearTimeout(timer);
+      signal.removeEventListener("abort", onAbort);
+      reject(new Error("Run cancelled"));
+    };
+
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
 }
 
 function clip(value: string, size = 1800): string {

@@ -88,6 +88,7 @@ You can override args per profile with `silo profiles set ... --settings`.
 
 - Daemon includes a scheduler with priorities (`high`, `normal`, `low`) and concurrency controls.
 - Supports workspace queue pause/resume/cancel and expensive-provider throttling.
+- Queue cancel aborts active workspace runs (best effort) and marks them `cancelled`.
 - Dashboard shows replay/debug timeline per run by pairing `tool.started` and `tool.finished` events.
 - In dashboard dev mode only, an extra `cli.exec` debug panel is shown for command-provider runs.
 

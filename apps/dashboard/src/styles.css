@@ -459,6 +459,11 @@ button:disabled {
   color: #fff;
 }
 
+.pill.cancelled {
+  background: #9a6a00;
+  color: #fff;
+}
+
 pre {
   white-space: pre-wrap;
   background: #0f0f0f;
