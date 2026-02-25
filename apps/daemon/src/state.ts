@@ -346,6 +346,8 @@ export class DaemonState {
       tokenInput: 0,
       tokenOutput: 0,
       costUsd: 0,
+      cancelReason: null,
+      cancelledAt: null,
     });
 
     this.queue.push({
@@ -412,11 +414,14 @@ export class DaemonState {
     for (const runId of cancelledRunIds) {
       const run = this.repo.getRunById(runId);
       if (!run) continue;
+      const cancelledAt = nowIso();
       this.repo.updateRun({
         ...run,
         status: "cancelled",
         summary: "Cancelled before execution",
-        endedAt: nowIso(),
+        cancelReason: "Cancelled before execution",
+        cancelledAt,
+        endedAt: cancelledAt,
       });
     }
 
@@ -549,6 +554,8 @@ export class DaemonState {
       ...run,
       status: "running",
       summary: "Run started",
+      cancelReason: null,
+      cancelledAt: null,
       endedAt: null,
     };
     this.repo.updateRun(running);
@@ -593,6 +600,8 @@ export class DaemonState {
         tokenInput: result.tokenInput,
         tokenOutput: result.tokenOutput,
         costUsd: result.costUsd,
+        cancelReason: null,
+        cancelledAt: null,
         endedAt: nowIso(),
       };
       this.repo.updateRun(completed);
@@ -621,6 +630,8 @@ export class DaemonState {
         ...running,
         status: "failed",
         summary: error instanceof Error ? error.message : "Unknown run error",
+        cancelReason: null,
+        cancelledAt: null,
         endedAt: nowIso(),
       };
       this.repo.updateRun(failed);
@@ -646,11 +657,14 @@ export class DaemonState {
   }
 
   private markRunCancelled(workspace: Workspace, running: AgentRun, reason: string): void {
+    const cancelledAt = nowIso();
     const cancelled: AgentRun = {
       ...running,
       status: "cancelled",
       summary: reason,
-      endedAt: nowIso(),
+      cancelReason: reason,
+      cancelledAt,
+      endedAt: cancelledAt,
     };
     this.repo.updateRun(cancelled);
     this.repo.upsertWorkspace(touchWorkspace(workspace, "active"));

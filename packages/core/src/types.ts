@@ -50,6 +50,8 @@ export interface AgentRun {
   tokenInput: number;
   tokenOutput: number;
   costUsd: number;
+  cancelReason: string | null;
+  cancelledAt: string | null;
   startedAt: string;
   endedAt: string | null;
 }

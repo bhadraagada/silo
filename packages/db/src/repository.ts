@@ -115,8 +115,11 @@ export class SiloRepository {
     };
     this.db
       .query(
-        `INSERT INTO runs (id, workspace_id, provider, prompt, status, summary, session_id, parent_run_id, token_input, token_output, cost_usd, started_at, ended_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        `INSERT INTO runs (
+          id, workspace_id, provider, prompt, status, summary, session_id, parent_run_id,
+          token_input, token_output, cost_usd, cancel_reason, cancelled_at, started_at, ended_at
+        )
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
       .run(
         run.id,
@@ -130,6 +133,8 @@ export class SiloRepository {
         run.tokenInput,
         run.tokenOutput,
         run.costUsd,
+        run.cancelReason,
+        run.cancelledAt,
         run.startedAt,
         run.endedAt
       );
@@ -140,10 +145,22 @@ export class SiloRepository {
     this.db
       .query(
         `UPDATE runs
-         SET status = ?, summary = ?, session_id = ?, token_input = ?, token_output = ?, cost_usd = ?, ended_at = ?
+         SET status = ?, summary = ?, session_id = ?, token_input = ?, token_output = ?, cost_usd = ?,
+             cancel_reason = ?, cancelled_at = ?, ended_at = ?
          WHERE id = ?`
       )
-      .run(run.status, run.summary, run.sessionId, run.tokenInput, run.tokenOutput, run.costUsd, run.endedAt, run.id);
+      .run(
+        run.status,
+        run.summary,
+        run.sessionId,
+        run.tokenInput,
+        run.tokenOutput,
+        run.costUsd,
+        run.cancelReason,
+        run.cancelledAt,
+        run.endedAt,
+        run.id
+      );
   }
 
   getRunById(runId: string): AgentRun | null {
@@ -261,6 +278,8 @@ export class SiloRepository {
       tokenInput: Number(row.token_input),
       tokenOutput: Number(row.token_output),
       costUsd: Number(row.cost_usd),
+      cancelReason: row.cancel_reason ? String(row.cancel_reason) : null,
+      cancelledAt: row.cancelled_at ? String(row.cancelled_at) : null,
       startedAt: String(row.started_at),
       endedAt: row.ended_at ? String(row.ended_at) : null,
     };
