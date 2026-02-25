@@ -62,6 +62,10 @@ interface ToolTimelineStep {
 
 const EXPENSIVE_PROVIDERS = new Set(["openai", "claude-api", "anthropic"]);
 
+function isTestMode(): boolean {
+  return process.env.SILO_TEST_MODE === "1";
+}
+
 export class DaemonState {
   readonly config: DaemonConfig;
   private readonly repo = createSiloDb({ filePath: ensureSiloDirs().dbPath });
@@ -141,13 +145,15 @@ export class DaemonState {
     this.broadcast("workspace.upserted", { workspace: saved });
     this.syncGateway();
 
-    launchEditor({ path: saved.worktreePath });
-    launchBrowser({ url: workspaceUrl(saved), profilePath: saved.browserProfilePath });
-    switchToTerminalSession(saved.slug, saved.worktreePath);
-    notify({
-      title: `silo: ${saved.slug}`,
-      body: `Workspace ready at ${saved.domain}`,
-    });
+    if (!isTestMode()) {
+      launchEditor({ path: saved.worktreePath });
+      launchBrowser({ url: workspaceUrl(saved), profilePath: saved.browserProfilePath });
+      switchToTerminalSession(saved.slug, saved.worktreePath);
+      notify({
+        title: `silo: ${saved.slug}`,
+        body: `Workspace ready at ${saved.domain}`,
+      });
+    }
 
     return saved;
   }
@@ -164,9 +170,11 @@ export class DaemonState {
     const updated = touchWorkspace(existing, "active");
     const saved = this.repo.upsertWorkspace(updated);
 
-    launchEditor({ path: saved.worktreePath });
-    launchBrowser({ url: workspaceUrl(saved), profilePath: saved.browserProfilePath });
-    switchToTerminalSession(saved.slug, saved.worktreePath);
+    if (!isTestMode()) {
+      launchEditor({ path: saved.worktreePath });
+      launchBrowser({ url: workspaceUrl(saved), profilePath: saved.browserProfilePath });
+      switchToTerminalSession(saved.slug, saved.worktreePath);
+    }
 
     this.repo.addEvent({
       runId: "system",
@@ -310,7 +318,9 @@ export class DaemonState {
       action: `silo://workspace/${workspace.slug}/ship`,
     });
     this.broadcast("notification", { notification: notif });
-    notify({ title: notif.title, body: notif.body });
+    if (!isTestMode()) {
+      notify({ title: notif.title, body: notif.body });
+    }
 
     return {
       workspace,
@@ -606,10 +616,12 @@ export class DaemonState {
         action: `silo://workspace/${workspace.slug}/run/${running.id}/logs`,
       });
       this.broadcast("notification", { notification: notif });
-      notify({
-        title: notif.title,
-        body: `${notif.body}\nActions: Open Logs / Re-run in dashboard`,
-      });
+      if (!isTestMode()) {
+        notify({
+          title: notif.title,
+          body: `${notif.body}\nActions: Open Logs / Re-run in dashboard`,
+        });
+      }
       this.broadcast("run.completed", { run: completed });
     } catch (error) {
       if (this.cancelRequestedRuns.has(running.id) || isAbortLikeError(error)) {
@@ -634,10 +646,12 @@ export class DaemonState {
         action: `silo://workspace/${workspace.slug}/run/${running.id}/logs`,
       });
       this.broadcast("notification", { notification: notif });
-      notify({
-        title: notif.title,
-        body: `${notif.body}\nActions: Open Logs / Re-run in dashboard`,
-      });
+      if (!isTestMode()) {
+        notify({
+          title: notif.title,
+          body: `${notif.body}\nActions: Open Logs / Re-run in dashboard`,
+        });
+      }
       this.broadcast("run.failed", { run: failed });
     } finally {
       this.activeRunControllers.delete(job.runId);
@@ -671,10 +685,12 @@ export class DaemonState {
       action: `silo://workspace/${workspace.slug}/run/${running.id}/logs`,
     });
     this.broadcast("notification", { notification: notif });
-    notify({
-      title: notif.title,
-      body: notif.body,
-    });
+    if (!isTestMode()) {
+      notify({
+        title: notif.title,
+        body: notif.body,
+      });
+    }
     this.broadcast("run.cancelled", { run: cancelled });
   }
 
