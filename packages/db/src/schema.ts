@@ -34,6 +34,8 @@ export const schemaStatements = [
       token_input INTEGER NOT NULL DEFAULT 0,
       token_output INTEGER NOT NULL DEFAULT 0,
       cost_usd REAL NOT NULL DEFAULT 0,
+      cancel_reason TEXT,
+      cancelled_at TEXT,
       started_at TEXT NOT NULL,
       ended_at TEXT,
       FOREIGN KEY(workspace_id) REFERENCES workspaces(id)
@@ -68,4 +70,6 @@ export const schemaStatements = [
 export const migrationStatements = [
   `ALTER TABLE runs ADD COLUMN session_id TEXT;`,
   `ALTER TABLE runs ADD COLUMN parent_run_id TEXT;`,
+  `ALTER TABLE runs ADD COLUMN cancel_reason TEXT;`,
+  `ALTER TABLE runs ADD COLUMN cancelled_at TEXT;`,
 ];
