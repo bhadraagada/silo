@@ -6,6 +6,7 @@ export type EventType =
   | "run.started"
   | "run.completed"
   | "run.failed"
+  | "run.cancelled"
   | "tool.started"
   | "tool.finished"
   | "llm.usage"

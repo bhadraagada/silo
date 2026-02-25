@@ -69,8 +69,9 @@ export class DaemonState {
 
   private queue: QueueJob[] = [];
   private readonly activeRuns = new Map<string, { workspaceId: string; provider: string }>();
+  private readonly activeRunControllers = new Map<string, AbortController>();
   private readonly pausedWorkspaces = new Set<string>();
-  private readonly cancelRequestedWorkspaces = new Set<string>();
+  private readonly cancelRequestedRuns = new Set<string>();
   private queueConfig: QueueConfig = {
     maxConcurrentRuns: Number(process.env.SILO_MAX_CONCURRENT_RUNS ?? "2"),
     maxExpensiveRuns: Number(process.env.SILO_MAX_EXPENSIVE_RUNS ?? "1"),
@@ -419,14 +420,21 @@ export class DaemonState {
       });
     }
 
-    if (Array.from(this.activeRuns.values()).some((active) => active.workspaceId === workspace.id)) {
-      this.cancelRequestedWorkspaces.add(workspaceSlug);
+    const runningRunIds = Array.from(this.activeRuns.entries())
+      .filter(([, active]) => active.workspaceId === workspace.id)
+      .map(([runId]) => runId);
+
+    for (const runId of runningRunIds) {
+      this.cancelRequestedRuns.add(runId);
+      const controller = this.activeRunControllers.get(runId);
+      controller?.abort();
     }
 
     this.broadcast("queue.updated", { queue: this.getQueueState() });
     return {
       cancelledQueuedRuns: cancelledRunIds.length,
-      runningCancellationRequested: this.cancelRequestedWorkspaces.has(workspaceSlug),
+      cancelledRunningRuns: runningRunIds.length,
+      runningCancellationRequested: runningRunIds.length > 0,
     };
   }
 
@@ -533,6 +541,9 @@ export class DaemonState {
       return;
     }
 
+    const abortController = new AbortController();
+    this.activeRunControllers.set(job.runId, abortController);
+
     this.repo.upsertWorkspace(touchWorkspace(workspace, "running"));
     const running: AgentRun = {
       ...run,
@@ -556,6 +567,7 @@ export class DaemonState {
           providerConfig,
           continueSessionId: running.sessionId ?? undefined,
           parentRunId: running.parentRunId ?? undefined,
+          abortSignal: abortController.signal,
         },
         (event) => {
           const savedEvent = this.repo.addEvent({
@@ -567,6 +579,11 @@ export class DaemonState {
           this.broadcast("run.event", { event: savedEvent });
         }
       );
+
+      if (this.cancelRequestedRuns.has(running.id) || abortController.signal.aborted) {
+        this.markRunCancelled(workspace, running, "Cancelled during execution");
+        return;
+      }
 
       const completed: AgentRun = {
         ...running,
@@ -595,6 +612,11 @@ export class DaemonState {
       });
       this.broadcast("run.completed", { run: completed });
     } catch (error) {
+      if (this.cancelRequestedRuns.has(running.id) || isAbortLikeError(error)) {
+        this.markRunCancelled(workspace, running, "Cancelled during execution");
+        return;
+      }
+
       const failed: AgentRun = {
         ...running,
         status: "failed",
@@ -618,10 +640,42 @@ export class DaemonState {
       });
       this.broadcast("run.failed", { run: failed });
     } finally {
-      if (this.cancelRequestedWorkspaces.has(workspace.slug)) {
-        this.cancelRequestedWorkspaces.delete(workspace.slug);
-      }
+      this.activeRunControllers.delete(job.runId);
+      this.cancelRequestedRuns.delete(job.runId);
     }
+  }
+
+  private markRunCancelled(workspace: Workspace, running: AgentRun, reason: string): void {
+    const cancelled: AgentRun = {
+      ...running,
+      status: "cancelled",
+      summary: reason,
+      endedAt: nowIso(),
+    };
+    this.repo.updateRun(cancelled);
+    this.repo.upsertWorkspace(touchWorkspace(workspace, "active"));
+
+    const event = this.repo.addEvent({
+      runId: running.id,
+      workspaceId: workspace.id,
+      type: "run.cancelled",
+      payload: { reason },
+    });
+    this.broadcast("run.event", { event });
+
+    const notif = this.repo.addNotification({
+      workspaceId: workspace.id,
+      runId: running.id,
+      title: `${workspace.slug} run cancelled`,
+      body: reason,
+      action: `silo://workspace/${workspace.slug}/run/${running.id}/logs`,
+    });
+    this.broadcast("notification", { notification: notif });
+    notify({
+      title: notif.title,
+      body: notif.body,
+    });
+    this.broadcast("run.cancelled", { run: cancelled });
   }
 
   private sortQueue(): void {
@@ -725,4 +779,15 @@ function parseSiloAction(action: string):
 function readToolName(payload: Record<string, unknown>): string {
   const tool = payload.tool;
   return typeof tool === "string" ? tool : "unknown";
+}
+
+function isAbortLikeError(error: unknown): boolean {
+  if (error instanceof DOMException && error.name === "AbortError") {
+    return true;
+  }
+  if (!(error instanceof Error)) {
+    return false;
+  }
+  const message = error.message.toLowerCase();
+  return message.includes("cancelled") || message.includes("aborted");
 }
