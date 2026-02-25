@@ -46,7 +46,7 @@ function printHelp(): void {
   silo profiles set <profile-name> --provider <provider> --settings '{"model":"..."}'
   silo profiles validate [--profile <profile-name>]
   silo queue show
-  silo queue config [--max-concurrent <n>] [--max-expensive <n>]
+  silo queue config [--max-concurrent <n>] [--max-expensive <n>] [--max-workspace <n>] [--starvation-ms <n>]
   silo queue pause <workspace-slug>
   silo queue resume <workspace-slug>
   silo queue cancel <workspace-slug>
@@ -268,11 +268,15 @@ async function main(): Promise<void> {
     if (sub === "config") {
       const maxConcurrent = getArg("--max-concurrent");
       const maxExpensive = getArg("--max-expensive");
+      const maxWorkspace = getArg("--max-workspace");
+      const starvationMs = getArg("--starvation-ms");
       const payload = await request("/api/queue/config", {
         method: "POST",
         body: JSON.stringify({
           maxConcurrentRuns: maxConcurrent ? Number(maxConcurrent) : undefined,
           maxExpensiveRuns: maxExpensive ? Number(maxExpensive) : undefined,
+          maxWorkspaceRuns: maxWorkspace ? Number(maxWorkspace) : undefined,
+          starvationThresholdMs: starvationMs ? Number(starvationMs) : undefined,
         }),
       });
       output(payload.data);

@@ -52,6 +52,8 @@ export const providerValidateSchema = z.object({
 export const queueConfigSchema = z.object({
   maxConcurrentRuns: z.number().int().min(1).max(20).optional(),
   maxExpensiveRuns: z.number().int().min(1).max(20).optional(),
+  maxWorkspaceRuns: z.number().int().min(1).max(20).optional(),
+  starvationThresholdMs: z.number().int().min(0).max(24 * 60 * 60 * 1000).optional(),
 });
 
 export const queueWorkspaceSchema = z.object({
