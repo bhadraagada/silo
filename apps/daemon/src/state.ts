@@ -213,6 +213,7 @@ export class DaemonState {
     const normalized = {
       apiKey: typeof settings.apiKey === "string" ? settings.apiKey : undefined,
       apiKeyEnv: typeof settings.apiKeyEnv === "string" ? settings.apiKeyEnv : undefined,
+      apiKeyRef: typeof settings.apiKeyRef === "string" ? settings.apiKeyRef : undefined,
       model: typeof settings.model === "string" ? settings.model : undefined,
       maxTokens: typeof settings.maxTokens === "number" ? settings.maxTokens : undefined,
       command: typeof settings.command === "string" ? settings.command : undefined,

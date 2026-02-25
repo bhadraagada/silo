@@ -1,12 +1,14 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { ensureSiloDirs } from "@silo/os-adapters";
+import { readProviderApiKey, storeProviderApiKey } from "./keychain";
 
 export type ProviderKey = "openai" | "claude-api" | "codex" | "claude" | "opencode";
 
 export type ProviderSettings = {
   apiKey?: string;
   apiKeyEnv?: string;
+  apiKeyRef?: string;
   model?: string;
   maxTokens?: number;
   command?: string;
@@ -67,7 +69,7 @@ export function resolveProviderConfig(provider: string, profileName?: string): R
   const normalized = provider.toLowerCase() as ProviderKey;
   const settings = profile.providers[normalized] ?? {};
 
-  const apiKey = settings.apiKey ?? (settings.apiKeyEnv ? process.env[settings.apiKeyEnv] : undefined);
+  const apiKey = resolveApiKey(settings);
   return {
     profileName: selectedProfile,
     provider,
@@ -96,13 +98,14 @@ export function setDefaultProfile(name: string): ProviderProfilesConfig {
 export function upsertProviderProfile(name: string, provider: string, settings: ProviderSettings): ProviderProfilesConfig {
   const config = loadProfiles();
   const providerKey = provider.toLowerCase() as ProviderKey;
+  const persisted = persistSecureApiKey(name, providerKey, settings);
 
   const existing = config.profiles[name] ?? { name, providers: {} };
   const updatedProfile: ProviderProfile = {
     ...existing,
     providers: {
       ...existing.providers,
-      [providerKey]: settings,
+      [providerKey]: persisted,
     },
   };
 
@@ -128,6 +131,38 @@ function ensureProfilesFile(): void {
   }
   mkdirSync(dirname(profilesPath), { recursive: true });
   saveProfiles(defaultProfiles());
+}
+
+function persistSecureApiKey(profileName: string, provider: ProviderKey, settings: ProviderSettings): ProviderSettings {
+  if (!settings.apiKey) {
+    return settings;
+  }
+
+  const apiKeyRef = storeProviderApiKey(profileName, provider, settings.apiKey);
+  return {
+    ...settings,
+    apiKey: undefined,
+    apiKeyRef,
+  };
+}
+
+export function resolveApiKey(settings: ProviderSettings): string | undefined {
+  if (settings.apiKeyRef) {
+    const key = readProviderApiKey(settings.apiKeyRef);
+    if (key) {
+      return key;
+    }
+  }
+
+  if (settings.apiKey) {
+    return settings.apiKey;
+  }
+
+  if (settings.apiKeyEnv) {
+    return process.env[settings.apiKeyEnv];
+  }
+
+  return undefined;
 }
 
 function defaultProfiles(): ProviderProfilesConfig {

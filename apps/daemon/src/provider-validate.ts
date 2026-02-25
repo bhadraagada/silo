@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import type { ProviderProfilesConfig, ProviderSettings } from "./provider-profiles";
+import { resolveApiKey, type ProviderProfilesConfig, type ProviderSettings } from "./provider-profiles";
 
 export interface ProviderValidationEntry {
   provider: string;
@@ -40,11 +40,11 @@ async function validateProvider(provider: string, settings: ProviderSettings): P
   const normalized = provider.toLowerCase();
 
   if (normalized === "openai") {
-    const apiKey = settings.apiKey ?? (settings.apiKeyEnv ? process.env[settings.apiKeyEnv] : undefined);
+    const apiKey = resolveApiKey(settings);
     checks.push({
       name: "api-key",
       ok: Boolean(apiKey),
-      detail: apiKey ? "API key resolved" : "Missing API key",
+      detail: apiKey ? "API key resolved" : "Missing API key (env or secure store ref)",
     });
     if (apiKey) {
       const model = settings.model ?? "gpt-4.1-mini";
@@ -68,11 +68,11 @@ async function validateProvider(provider: string, settings: ProviderSettings): P
       });
     }
   } else if (normalized === "claude-api" || normalized === "anthropic") {
-    const apiKey = settings.apiKey ?? (settings.apiKeyEnv ? process.env[settings.apiKeyEnv] : undefined);
+    const apiKey = resolveApiKey(settings);
     checks.push({
       name: "api-key",
       ok: Boolean(apiKey),
-      detail: apiKey ? "API key resolved" : "Missing API key",
+      detail: apiKey ? "API key resolved" : "Missing API key (env or secure store ref)",
     });
     if (apiKey) {
       const ping = await fetch("https://api.anthropic.com/v1/messages", {
