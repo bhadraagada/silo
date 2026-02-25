@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { dirname, join } from "node:path";
 import { ensureSiloDirs } from "@silo/os-adapters";
@@ -110,15 +110,20 @@ function readSecret(ref: string): { ok: boolean; value: string; detail: string }
 }
 
 function encryptWithDpapi(secret: string): { ok: boolean; value: string; detail: string } {
-  const escaped = secret.replace(/'/g, "''");
   const result = spawnSync(
     "powershell",
     [
       "-NoProfile",
       "-Command",
-      `$secret = ConvertTo-SecureString '${escaped}' -AsPlainText -Force; ConvertFrom-SecureString $secret`,
+      "$secret = ConvertTo-SecureString $env:SILO_SECRET_VALUE -AsPlainText -Force; ConvertFrom-SecureString $secret",
     ],
-    { encoding: "utf8" }
+    {
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        SILO_SECRET_VALUE: secret,
+      },
+    }
   );
   if ((result.status ?? 1) !== 0) {
     return {
@@ -131,19 +136,24 @@ function encryptWithDpapi(secret: string): { ok: boolean; value: string; detail:
 }
 
 function decryptWithDpapi(encrypted: string): { ok: boolean; value: string; detail: string } {
-  const escaped = encrypted.replace(/'/g, "''");
   const result = spawnSync(
     "powershell",
     [
       "-NoProfile",
       "-Command",
       [
-        `$secure = ConvertTo-SecureString '${escaped}';`,
+        "$secure = ConvertTo-SecureString $env:SILO_ENCRYPTED_VALUE;",
         "$ptr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure);",
-        "[Runtime.InteropServices.Marshal]::PtrToStringBSTR($ptr)",
+        "try { [Runtime.InteropServices.Marshal]::PtrToStringBSTR($ptr) } finally { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($ptr) }",
       ].join(" "),
     ],
-    { encoding: "utf8" }
+    {
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        SILO_ENCRYPTED_VALUE: encrypted,
+      },
+    }
   );
   if ((result.status ?? 1) !== 0) {
     return {
@@ -181,8 +191,21 @@ function loadWindowsStore(): Record<string, string> {
 
 function saveWindowsStore(store: Record<string, string>): void {
   const filePath = windowsStorePath();
-  mkdirSync(dirname(filePath), { recursive: true });
-  writeFileSync(filePath, `${JSON.stringify(store, null, 2)}\n`, "utf8");
+  const directory = dirname(filePath);
+  mkdirSync(directory, { recursive: true, mode: 0o700 });
+  writeFileSync(filePath, `${JSON.stringify(store, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
+
+  try {
+    chmodSync(directory, 0o700);
+  } catch {
+    // best effort on platforms that ignore POSIX modes
+  }
+
+  try {
+    chmodSync(filePath, 0o600);
+  } catch {
+    // best effort on platforms that ignore POSIX modes
+  }
 }
 
 function safeSegment(input: string): string {
