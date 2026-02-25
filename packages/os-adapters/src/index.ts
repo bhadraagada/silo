@@ -29,7 +29,7 @@ export interface TerminalSessionResult {
 }
 
 export function ensureSiloDirs(): { rootDir: string; profileRoot: string; dbPath: string } {
-  const rootDir = join(homedir(), ".silo");
+  const rootDir = process.env.SILO_HOME_DIR || join(homedir(), ".silo");
   const profileRoot = join(rootDir, "profiles");
   const dbPath = join(rootDir, "silo.db");
   mkdirSync(profileRoot, { recursive: true });
