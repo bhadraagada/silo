@@ -50,6 +50,8 @@ type QueueState = {
   config: {
     maxConcurrentRuns: number;
     maxExpensiveRuns: number;
+    maxWorkspaceRuns: number;
+    starvationThresholdMs: number;
   };
   activeCount: number;
   activeRunIds: string[];
@@ -772,6 +774,8 @@ export function App() {
                 Active: {queue?.activeCount ?? 0} / {queue?.config.maxConcurrentRuns ?? 0}
               </small>
               <small>Expensive limit: {queue?.config.maxExpensiveRuns ?? 0}</small>
+              <small>Workspace cap: {queue?.config.maxWorkspaceRuns ?? 0}</small>
+              <small>Starvation threshold: {Math.round((queue?.config.starvationThresholdMs ?? 0) / 1000)}s</small>
               <div className="actions">
                 <button
                   onClick={() =>
@@ -808,6 +812,42 @@ export function App() {
                   }
                 >
                   - Expensive
+                </button>
+                <button
+                  onClick={() =>
+                    void queueAction("/api/queue/config", {
+                      maxWorkspaceRuns: (queue?.config.maxWorkspaceRuns ?? 1) + 1,
+                    })
+                  }
+                >
+                  + Workspace
+                </button>
+                <button
+                  onClick={() =>
+                    void queueAction("/api/queue/config", {
+                      maxWorkspaceRuns: Math.max(1, (queue?.config.maxWorkspaceRuns ?? 1) - 1),
+                    })
+                  }
+                >
+                  - Workspace
+                </button>
+                <button
+                  onClick={() =>
+                    void queueAction("/api/queue/config", {
+                      starvationThresholdMs: (queue?.config.starvationThresholdMs ?? 120000) + 30000,
+                    })
+                  }
+                >
+                  + Starvation
+                </button>
+                <button
+                  onClick={() =>
+                    void queueAction("/api/queue/config", {
+                      starvationThresholdMs: Math.max(0, (queue?.config.starvationThresholdMs ?? 120000) - 30000),
+                    })
+                  }
+                >
+                  - Starvation
                 </button>
               </div>
               {queue?.queued.map((job) => (

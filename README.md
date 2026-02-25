@@ -40,7 +40,7 @@
 - `bun run cli -- profiles set <profile-name> --provider <provider> --settings '{"model":"..."}'`
 - `bun run cli -- profiles validate [--profile <name>]`
 - `bun run cli -- queue show`
-- `bun run cli -- queue config [--max-concurrent <n>] [--max-expensive <n>]`
+- `bun run cli -- queue config [--max-concurrent <n>] [--max-expensive <n>] [--max-workspace <n>] [--starvation-ms <n>]`
 - `bun run cli -- queue pause <workspace-slug>`
 - `bun run cli -- queue resume <workspace-slug>`
 - `bun run cli -- queue cancel <workspace-slug>`
@@ -89,6 +89,7 @@ You can override args per profile with `silo profiles set ... --settings`.
 - Daemon includes a scheduler with priorities (`high`, `normal`, `low`) and concurrency controls.
 - Supports workspace queue pause/resume/cancel and expensive-provider throttling.
 - Queue cancel aborts active workspace runs (best effort) and marks them `cancelled`.
+- Queue fairness controls support per-workspace active run caps and starvation-prevention scheduling.
 - Dashboard shows replay/debug timeline per run by pairing `tool.started` and `tool.finished` events.
 - In dashboard dev mode only, an extra `cli.exec` debug panel is shown for command-provider runs.
 

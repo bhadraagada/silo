@@ -48,6 +48,8 @@ interface QueueJob {
 interface QueueConfig {
   maxConcurrentRuns: number;
   maxExpensiveRuns: number;
+  maxWorkspaceRuns: number;
+  starvationThresholdMs: number;
 }
 
 interface ToolTimelineStep {
@@ -75,6 +77,8 @@ export class DaemonState {
   private queueConfig: QueueConfig = {
     maxConcurrentRuns: Number(process.env.SILO_MAX_CONCURRENT_RUNS ?? "2"),
     maxExpensiveRuns: Number(process.env.SILO_MAX_EXPENSIVE_RUNS ?? "1"),
+    maxWorkspaceRuns: Number(process.env.SILO_MAX_WORKSPACE_RUNS ?? "1"),
+    starvationThresholdMs: Number(process.env.SILO_QUEUE_STARVATION_MS ?? "120000"),
   };
 
   constructor(config: DaemonConfig) {
@@ -378,10 +382,17 @@ export class DaemonState {
     };
   }
 
-  setQueueConfig(input: { maxConcurrentRuns?: number; maxExpensiveRuns?: number }) {
+  setQueueConfig(input: {
+    maxConcurrentRuns?: number;
+    maxExpensiveRuns?: number;
+    maxWorkspaceRuns?: number;
+    starvationThresholdMs?: number;
+  }) {
     this.queueConfig = {
       maxConcurrentRuns: input.maxConcurrentRuns ?? this.queueConfig.maxConcurrentRuns,
       maxExpensiveRuns: input.maxExpensiveRuns ?? this.queueConfig.maxExpensiveRuns,
+      maxWorkspaceRuns: input.maxWorkspaceRuns ?? this.queueConfig.maxWorkspaceRuns,
+      starvationThresholdMs: input.starvationThresholdMs ?? this.queueConfig.starvationThresholdMs,
     };
     this.processQueue();
     return this.getQueueState();
@@ -517,6 +528,14 @@ export class DaemonState {
       EXPENSIVE_PROVIDERS.has(run.provider.toLowerCase())
     ).length;
 
+    const activeByWorkspace = new Map<string, number>();
+    for (const active of this.activeRuns.values()) {
+      activeByWorkspace.set(active.workspaceId, (activeByWorkspace.get(active.workspaceId) ?? 0) + 1);
+    }
+
+    const starvationCutoff = Date.now() - this.queueConfig.starvationThresholdMs;
+    let selectedIndex = -1;
+
     for (let i = 0; i < this.queue.length; i += 1) {
       const job = this.queue[i];
       if (this.pausedWorkspaces.has(job.workspaceSlug)) {
@@ -527,7 +546,47 @@ export class DaemonState {
         continue;
       }
 
-      this.queue.splice(i, 1);
+      const workspaceActive = activeByWorkspace.get(job.workspaceId) ?? 0;
+      if (workspaceActive >= this.queueConfig.maxWorkspaceRuns) {
+        continue;
+      }
+
+      if (selectedIndex === -1) {
+        selectedIndex = i;
+        continue;
+      }
+
+      const current = this.queue[selectedIndex];
+      const currentStarved = new Date(current.enqueuedAt).getTime() <= starvationCutoff;
+      const candidateStarved = new Date(job.enqueuedAt).getTime() <= starvationCutoff;
+
+      if (candidateStarved && !currentStarved) {
+        selectedIndex = i;
+        continue;
+      }
+
+      if (candidateStarved && currentStarved) {
+        if (new Date(job.enqueuedAt).getTime() < new Date(current.enqueuedAt).getTime()) {
+          selectedIndex = i;
+        }
+        continue;
+      }
+
+      const currentScore = this.priorityScore(current.priority);
+      const candidateScore = this.priorityScore(job.priority);
+      if (candidateScore < currentScore) {
+        selectedIndex = i;
+        continue;
+      }
+      if (candidateScore === currentScore) {
+        if (new Date(job.enqueuedAt).getTime() < new Date(current.enqueuedAt).getTime()) {
+          selectedIndex = i;
+        }
+      }
+    }
+
+    if (selectedIndex >= 0) {
+      const [job] = this.queue.splice(selectedIndex, 1);
       return job;
     }
 
@@ -679,17 +738,17 @@ export class DaemonState {
   }
 
   private sortQueue(): void {
-    const score = (priority: QueuePriority): number => {
-      if (priority === "high") return 0;
-      if (priority === "normal") return 1;
-      return 2;
-    };
-
     this.queue.sort((a, b) => {
-      const priorityDiff = score(a.priority) - score(b.priority);
+      const priorityDiff = this.priorityScore(a.priority) - this.priorityScore(b.priority);
       if (priorityDiff !== 0) return priorityDiff;
       return new Date(a.enqueuedAt).getTime() - new Date(b.enqueuedAt).getTime();
     });
+  }
+
+  private priorityScore(priority: QueuePriority): number {
+    if (priority === "high") return 0;
+    if (priority === "normal") return 1;
+    return 2;
   }
 
   private buildTimelineSteps(events: RunEvent[]): ToolTimelineStep[] {
