@@ -72,7 +72,31 @@ type Timeline = {
     startedAt: string;
     endedAt: string | null;
     durationMs: number | null;
+    tokenInput: number;
+    tokenOutput: number;
+    costUsd: number;
   }>;
+  usageRollup: {
+    totalTokenInput: number;
+    totalTokenOutput: number;
+    totalCostUsd: number;
+    usageEvents: number;
+    byTool: Array<{
+      tool: string;
+      tokenInput: number;
+      tokenOutput: number;
+      costUsd: number;
+      usageEvents: number;
+    }>;
+  };
+  retryChain: {
+    rootRunId: string;
+    parentRunId: string | null;
+    childRunIds: string[];
+    ancestorRunIds: string[];
+    descendantRunIds: string[];
+    chainRunIds: string[];
+  };
 };
 
 type ProviderSettings = {
@@ -983,13 +1007,26 @@ export function App() {
                   <small>
                     Run {timeline.run.id.slice(0, 8)} | {timeline.run.provider} | {timeline.run.status} | Duration: {formatMs(timeline.totalDurationMs)}
                   </small>
+                  <small>
+                    Chain root: {timeline.retryChain.rootRunId.slice(0, 8)} | Parent: {timeline.retryChain.parentRunId ? timeline.retryChain.parentRunId.slice(0, 8) : "none"} | Children: {timeline.retryChain.childRunIds.length}
+                  </small>
+                  <small>
+                    Usage: in {timeline.usageRollup.totalTokenInput} / out {timeline.usageRollup.totalTokenOutput} / cost ${timeline.usageRollup.totalCostUsd.toFixed(4)} ({timeline.usageRollup.usageEvents} events)
+                  </small>
                   {timeline.steps.map((step, index) => (
                     <div className="row" key={`${step.tool}-${index}`}>
                       <span>{step.tool}</span>
                       <small className={`pill ${step.status === "completed" ? "completed" : "failed"}`}>{step.status.toUpperCase()}</small>
                       <small>{new Date(step.startedAt).toLocaleTimeString()}</small>
                       <small>{formatMs(step.durationMs)}</small>
+                      <small>in:{step.tokenInput} out:{step.tokenOutput}</small>
+                      <small>${step.costUsd.toFixed(4)}</small>
                     </div>
+                  ))}
+                  {timeline.usageRollup.byTool.slice(0, 5).map((toolUsage) => (
+                    <small key={toolUsage.tool}>
+                      {toolUsage.tool}: in {toolUsage.tokenInput}, out {toolUsage.tokenOutput}, cost ${toolUsage.costUsd.toFixed(4)}
+                    </small>
                   ))}
                 </>
               ) : (

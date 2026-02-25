@@ -56,8 +56,34 @@ interface ToolTimelineStep {
   startedAt: string;
   endedAt: string | null;
   durationMs: number | null;
+  tokenInput: number;
+  tokenOutput: number;
+  costUsd: number;
   startPayload: Record<string, unknown>;
   endPayload: Record<string, unknown> | null;
+}
+
+interface TimelineUsageRollup {
+  totalTokenInput: number;
+  totalTokenOutput: number;
+  totalCostUsd: number;
+  usageEvents: number;
+  byTool: Array<{
+    tool: string;
+    tokenInput: number;
+    tokenOutput: number;
+    costUsd: number;
+    usageEvents: number;
+  }>;
+}
+
+interface RetryChainInfo {
+  rootRunId: string;
+  parentRunId: string | null;
+  childRunIds: string[];
+  ancestorRunIds: string[];
+  descendantRunIds: string[];
+  chainRunIds: string[];
 }
 
 const EXPENSIVE_PROVIDERS = new Set(["openai", "claude-api", "anthropic"]);
@@ -446,6 +472,8 @@ export class DaemonState {
 
     const events = this.repo.listEvents(runId).sort((a, b) => new Date(a.ts).getTime() - new Date(b.ts).getTime());
     const steps = this.buildTimelineSteps(events);
+    const usage = this.applyUsageRollups(steps, events, run);
+    const retryChain = this.buildRetryChain(run);
     const startedAt = events[0]?.ts ?? run.startedAt;
     const endedAt = run.endedAt ?? events.at(-1)?.ts ?? null;
 
@@ -455,7 +483,9 @@ export class DaemonState {
       endedAt,
       totalDurationMs:
         endedAt && startedAt ? Math.max(0, new Date(endedAt).getTime() - new Date(startedAt).getTime()) : null,
-      steps,
+      steps: usage.steps,
+      usageRollup: usage.rollup,
+      retryChain,
       events,
     };
   }
@@ -718,6 +748,9 @@ export class DaemonState {
             startedAt: start.ts,
             endedAt: event.ts,
             durationMs,
+            tokenInput: 0,
+            tokenOutput: 0,
+            costUsd: 0,
             startPayload: start.payload,
             endPayload: event.payload,
           });
@@ -733,6 +766,9 @@ export class DaemonState {
           startedAt: dangling.ts,
           endedAt: null,
           durationMs: null,
+          tokenInput: 0,
+          tokenOutput: 0,
+          costUsd: 0,
           startPayload: dangling.payload,
           endPayload: null,
         });
@@ -740,6 +776,146 @@ export class DaemonState {
     }
 
     return steps.sort((a, b) => new Date(a.startedAt).getTime() - new Date(b.startedAt).getTime());
+  }
+
+  private applyUsageRollups(
+    steps: ToolTimelineStep[],
+    events: RunEvent[],
+    run: AgentRun
+  ): { steps: ToolTimelineStep[]; rollup: TimelineUsageRollup } {
+    const withUsage = steps.map((step) => ({ ...step }));
+    const usageEvents = events.filter((event) => event.type === "llm.usage");
+    const byTool = new Map<string, { tokenInput: number; tokenOutput: number; costUsd: number; usageEvents: number }>();
+
+    for (const usageEvent of usageEvents) {
+      const input = readNumber(usageEvent.payload, "input");
+      const output = readNumber(usageEvent.payload, "output");
+      const costUsd = readNumber(usageEvent.payload, "costUsd") || readNumber(usageEvent.payload, "cost");
+      const stepIndex = this.findStepIndexForUsage(withUsage, usageEvent.ts);
+      const tool = stepIndex >= 0 ? withUsage[stepIndex].tool : "unattributed";
+
+      if (stepIndex >= 0) {
+        withUsage[stepIndex].tokenInput += input;
+        withUsage[stepIndex].tokenOutput += output;
+        withUsage[stepIndex].costUsd += costUsd;
+      }
+
+      const current = byTool.get(tool) ?? { tokenInput: 0, tokenOutput: 0, costUsd: 0, usageEvents: 0 };
+      current.tokenInput += input;
+      current.tokenOutput += output;
+      current.costUsd += costUsd;
+      current.usageEvents += 1;
+      byTool.set(tool, current);
+    }
+
+    let totalTokenInput = 0;
+    let totalTokenOutput = 0;
+    let totalCostUsd = 0;
+    for (const aggregate of byTool.values()) {
+      totalTokenInput += aggregate.tokenInput;
+      totalTokenOutput += aggregate.tokenOutput;
+      totalCostUsd += aggregate.costUsd;
+    }
+
+    if (totalTokenInput === 0 && totalTokenOutput === 0 && totalCostUsd === 0) {
+      totalTokenInput = run.tokenInput;
+      totalTokenOutput = run.tokenOutput;
+      totalCostUsd = run.costUsd;
+      if (run.tokenInput > 0 || run.tokenOutput > 0 || run.costUsd > 0) {
+        byTool.set("unattributed", {
+          tokenInput: run.tokenInput,
+          tokenOutput: run.tokenOutput,
+          costUsd: run.costUsd,
+          usageEvents: usageEvents.length,
+        });
+      }
+    }
+
+    return {
+      steps: withUsage,
+      rollup: {
+        totalTokenInput,
+        totalTokenOutput,
+        totalCostUsd,
+        usageEvents: usageEvents.length,
+        byTool: Array.from(byTool.entries())
+          .map(([tool, aggregate]) => ({
+            tool,
+            tokenInput: aggregate.tokenInput,
+            tokenOutput: aggregate.tokenOutput,
+            costUsd: aggregate.costUsd,
+            usageEvents: aggregate.usageEvents,
+          }))
+          .sort((a, b) => b.tokenInput + b.tokenOutput - (a.tokenInput + a.tokenOutput)),
+      },
+    };
+  }
+
+  private findStepIndexForUsage(steps: ToolTimelineStep[], eventTs: string): number {
+    const eventTime = new Date(eventTs).getTime();
+    let selected = -1;
+    let latestStart = -1;
+
+    for (let index = 0; index < steps.length; index += 1) {
+      const step = steps[index];
+      const start = new Date(step.startedAt).getTime();
+      const end = step.endedAt ? new Date(step.endedAt).getTime() : Number.POSITIVE_INFINITY;
+      if (start <= eventTime && eventTime <= end) {
+        if (start >= latestStart) {
+          latestStart = start;
+          selected = index;
+        }
+      }
+    }
+
+    return selected;
+  }
+
+  private buildRetryChain(run: AgentRun): RetryChainInfo {
+    const workspaceRuns = this.repo.listRuns(run.workspaceId);
+    const byId = new Map(workspaceRuns.map((item) => [item.id, item]));
+
+    const ancestorRunIds: string[] = [];
+    let cursor = run.parentRunId;
+    while (cursor) {
+      const parent = byId.get(cursor);
+      if (!parent) {
+        break;
+      }
+      ancestorRunIds.unshift(parent.id);
+      cursor = parent.parentRunId;
+    }
+
+    const childRunIds = workspaceRuns
+      .filter((candidate) => candidate.parentRunId === run.id)
+      .map((candidate) => candidate.id);
+
+    const descendantRunIds = this.collectDescendantRunIds(run.id, workspaceRuns);
+    const rootRunId = ancestorRunIds[0] ?? run.id;
+
+    return {
+      rootRunId,
+      parentRunId: run.parentRunId,
+      childRunIds,
+      ancestorRunIds,
+      descendantRunIds,
+      chainRunIds: [...ancestorRunIds, run.id, ...descendantRunIds],
+    };
+  }
+
+  private collectDescendantRunIds(runId: string, runs: AgentRun[]): string[] {
+    const descendants: string[] = [];
+    const queue = [runId];
+
+    while (queue.length > 0) {
+      const current = queue.shift();
+      if (!current) continue;
+      const children = runs.filter((candidate) => candidate.parentRunId === current).map((candidate) => candidate.id);
+      descendants.push(...children);
+      queue.push(...children);
+    }
+
+    return descendants;
   }
 }
 
@@ -779,6 +955,11 @@ function parseSiloAction(action: string):
 function readToolName(payload: Record<string, unknown>): string {
   const tool = payload.tool;
   return typeof tool === "string" ? tool : "unknown";
+}
+
+function readNumber(payload: Record<string, unknown>, key: string): number {
+  const value = payload[key];
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
 }
 
 function isAbortLikeError(error: unknown): boolean {
