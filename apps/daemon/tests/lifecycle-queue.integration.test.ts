@@ -128,6 +128,61 @@ describe("daemon integration: workspace lifecycle and queue transitions", () => 
 
     rmSync(repoPath, { recursive: true, force: true });
   });
+
+  test("supports cancelling individual queued and running runs", async () => {
+    const repoPath = createTempGitRepo();
+    const state = new DaemonStateCtor({ host: "127.0.0.1", port: 0 });
+
+    const workspaceResponse = await callHttp(state, "POST", "/api/workspaces", {
+      projectSlug: "daemon-test",
+      task: `run-cancel-${Date.now()}`,
+      repoPath,
+    });
+    const workspace = workspaceResponse.body.data as JsonRecord;
+    const workspaceSlug = String(workspace.slug);
+
+    await callHttp(state, "POST", "/api/queue/config", {
+      maxConcurrentRuns: 1,
+      maxExpensiveRuns: 1,
+    });
+
+    await callHttp(state, "POST", "/api/queue/workspace/pause", { workspaceSlug });
+    const queuedRunResponse = await callHttp(state, "POST", "/api/runs", {
+      workspaceSlug,
+      provider: "mock",
+      prompt: "queued run cancel",
+      priority: "normal",
+    });
+    const queuedRunId = String((queuedRunResponse.body.data as JsonRecord).id);
+
+    const cancelQueuedResponse = await callHttp(state, "POST", `/api/runs/${queuedRunId}/cancel`, {});
+    expect(cancelQueuedResponse.status).toBe(200);
+    const cancelQueuedData = cancelQueuedResponse.body.data as JsonRecord;
+    expect(Boolean(cancelQueuedData.cancelled)).toBe(true);
+    expect(Boolean(cancelQueuedData.queuedCancelled)).toBe(true);
+    const queuedCancelledState = await waitForRunStatus(state, queuedRunId, ["cancelled"]);
+    expect(queuedCancelledState.status).toBe("cancelled");
+
+    await callHttp(state, "POST", "/api/queue/workspace/resume", { workspaceSlug });
+    const runningRunResponse = await callHttp(state, "POST", "/api/runs", {
+      workspaceSlug,
+      provider: "mock",
+      prompt: "running run cancel",
+      priority: "normal",
+    });
+    const runningRunId = String((runningRunResponse.body.data as JsonRecord).id);
+
+    await waitForRunStatus(state, runningRunId, ["running"]);
+    const cancelRunningResponse = await callHttp(state, "POST", `/api/runs/${runningRunId}/cancel`, {});
+    expect(cancelRunningResponse.status).toBe(200);
+    const cancelRunningData = cancelRunningResponse.body.data as JsonRecord;
+    expect(Boolean(cancelRunningData.cancelled)).toBe(true);
+    expect(Boolean(cancelRunningData.runningCancellationRequested)).toBe(true);
+    const runningCancelledState = await waitForRunStatus(state, runningRunId, ["cancelled"]);
+    expect(runningCancelledState.status).toBe("cancelled");
+
+    rmSync(repoPath, { recursive: true, force: true });
+  });
 });
 
 async function callHttp(

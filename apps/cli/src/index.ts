@@ -34,6 +34,7 @@ function printHelp(): void {
   silo switch <workspace-slug>
   silo run <workspace-slug> --prompt "do something" [--provider mock] [--profile default] [--priority high|normal|low]
   silo continue <run-id> --prompt "follow-up prompt" [--priority high|normal|low]
+  silo cancel <run-id>
   silo runs [--workspace <workspace-slug>]
   silo events [--run <run-id>]
   silo notifications [--workspace <workspace-slug>]
@@ -149,6 +150,20 @@ async function main(): Promise<void> {
         priority,
         continueRunId,
       }),
+    });
+    output(payload.data);
+    return;
+  }
+
+  if (command === "cancel") {
+    const runId = rest[0];
+    if (!runId) {
+      throw new Error("Usage: silo cancel <run-id>");
+    }
+
+    const payload = await request(`/api/runs/${runId}/cancel`, {
+      method: "POST",
+      body: JSON.stringify({}),
     });
     output(payload.data);
     return;

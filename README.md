@@ -31,6 +31,7 @@
 - `bun run cli -- up <project> --task "..." [--repo path]`
 - `bun run cli -- run <workspace-slug> --prompt "..." [--provider mock|openai|claude-api|codex|claude|opencode]`
 - `bun run cli -- run <workspace-slug> --prompt "..." [--provider ...] [--profile default] [--priority high|normal|low]`
+- `bun run cli -- cancel <run-id>`
 - `bun run cli -- review <workspace-slug> [--provider openai|claude-api] [--profile default]`
 - `bun run cli -- ship <workspace-slug> --message "..." [--no-checks] [--open-pr]`
 - `bun run cli -- action <silo://...>`

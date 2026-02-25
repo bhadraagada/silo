@@ -197,6 +197,7 @@ const commandsReference = [
   "silo list",
   "silo switch <workspace-slug>",
   "silo run <workspace-slug> --prompt \"...\" [--provider ...] [--profile ...] [--priority ...]",
+  "silo cancel <run-id>",
   "silo runs [--workspace <workspace-slug>]",
   "silo events [--run <run-id>]",
   "silo notifications [--workspace <workspace-slug>]",
@@ -213,6 +214,7 @@ const apiReference = [
   "GET/POST /api/workspaces",
   "POST /api/workspaces/:slug/switch",
   "GET/POST /api/runs",
+  "POST /api/runs/:id/cancel",
   "GET /api/events",
   "GET /api/notifications",
   "GET /api/review",
@@ -452,6 +454,15 @@ export function App() {
       await refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Continue run failed");
+    }
+  }
+
+  async function cancelRunById(runId: string) {
+    try {
+      await apiPost(`/api/runs/${runId}/cancel`, {});
+      await refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Run cancellation failed");
     }
   }
 
@@ -738,6 +749,18 @@ export function App() {
                   <small>{run.summary}</small>
                   <small className={`pill ${run.status}`}>{run.status.toUpperCase()}</small>
                   {run.sessionId ? <small>session: {run.sessionId.slice(0, 16)}...</small> : null}
+                  {run.status === "queued" || run.status === "running" ? (
+                    <div className="actions">
+                      <button
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          void cancelRunById(run.id);
+                        }}
+                      >
+                        Cancel run
+                      </button>
+                    </div>
+                  ) : null}
                 </div>
               ))}
             </div> : null}
@@ -752,6 +775,11 @@ export function App() {
                   {focusedRun.parentRunId ? <small>Parent: {focusedRun.parentRunId.slice(0, 8)}</small> : null}
                   <small>Started: {new Date(focusedRun.startedAt).toLocaleString()}</small>
                   {focusedRun.endedAt ? <small>Ended: {new Date(focusedRun.endedAt).toLocaleString()}</small> : null}
+                  {focusedRun.status === "queued" || focusedRun.status === "running" ? (
+                    <div className="actions">
+                      <button onClick={() => void cancelRunById(focusedRun.id)}>Cancel run</button>
+                    </div>
+                  ) : null}
                 </div>
 
                 <h4>Conversation chain</h4>
