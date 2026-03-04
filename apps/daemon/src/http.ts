@@ -6,6 +6,7 @@ import {
   queueConfigSchema,
   queueWorkspaceSchema,
   reviewWorkspaceSchema,
+  runIdSchema,
   runWorkspaceSchema,
   shipWorkspaceSchema,
   upWorkspaceSchema,
@@ -70,6 +71,12 @@ export async function handleHttp(req: Request, state: DaemonState): Promise<Resp
       const input = runWorkspaceSchema.parse(body);
       const run = await state.runWorkspace(input);
       return json({ data: run }, { status: 201 });
+    }
+
+    if (pathname.startsWith("/api/runs/") && pathname.endsWith("/cancel") && method === "POST") {
+      const [, , , runId] = pathname.split("/");
+      const input = runIdSchema.parse({ runId });
+      return json({ data: state.cancelRun(input.runId) });
     }
 
     if (pathname === "/api/events" && method === "GET") {

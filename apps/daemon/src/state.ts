@@ -491,6 +491,70 @@ export class DaemonState {
     };
   }
 
+  cancelRun(runId: string) {
+    const run = this.repo.getRunById(runId);
+    if (!run) {
+      throw new Error(`Run not found: ${runId}`);
+    }
+
+    const workspace = this.repo.listWorkspaces().find((ws) => ws.id === run.workspaceId);
+    if (!workspace) {
+      throw new Error(`Workspace not found for run: ${runId}`);
+    }
+
+    if (run.status === "completed" || run.status === "failed" || run.status === "cancelled") {
+      return {
+        run,
+        cancelled: false,
+        reason: `Run already ${run.status}`,
+      };
+    }
+
+    const queueIndex = this.queue.findIndex((job) => job.runId === runId);
+    if (queueIndex >= 0) {
+      this.queue.splice(queueIndex, 1);
+      const cancelledAt = nowIso();
+      const cancelled: AgentRun = {
+        ...run,
+        status: "cancelled",
+        summary: "Cancelled before execution",
+        cancelReason: "Cancelled before execution",
+        cancelledAt,
+        endedAt: cancelledAt,
+      };
+      this.repo.updateRun(cancelled);
+      this.emitRunCancelled(workspace, cancelled, "Cancelled before execution");
+      this.broadcast("queue.updated", { queue: this.getQueueState() });
+      this.processQueue();
+
+      return {
+        run: cancelled,
+        cancelled: true,
+        queuedCancelled: true,
+        runningCancellationRequested: false,
+      };
+    }
+
+    if (this.activeRuns.has(runId)) {
+      this.cancelRequestedRuns.add(runId);
+      const controller = this.activeRunControllers.get(runId);
+      controller?.abort();
+
+      return {
+        run,
+        cancelled: true,
+        queuedCancelled: false,
+        runningCancellationRequested: true,
+      };
+    }
+
+    return {
+      run,
+      cancelled: false,
+      reason: `Run is currently ${run.status}`,
+    };
+  }
+
   getRunTimeline(runId: string) {
     const run = this.repo.getRunById(runId);
     if (!run) {
@@ -773,8 +837,13 @@ export class DaemonState {
     this.repo.updateRun(cancelled);
     this.repo.upsertWorkspace(touchWorkspace(workspace, "active"));
 
+    this.emitRunCancelled(workspace, cancelled, reason);
+  }
+
+  private emitRunCancelled(workspace: Workspace, run: AgentRun, reason: string): void {
+
     const event = this.repo.addEvent({
-      runId: running.id,
+      runId: run.id,
       workspaceId: workspace.id,
       type: "run.cancelled",
       payload: { reason },
@@ -783,10 +852,10 @@ export class DaemonState {
 
     const notif = this.repo.addNotification({
       workspaceId: workspace.id,
-      runId: running.id,
+      runId: run.id,
       title: `${workspace.slug} run cancelled`,
       body: reason,
-      action: `silo://workspace/${workspace.slug}/run/${running.id}/logs`,
+      action: `silo://workspace/${workspace.slug}/run/${run.id}/logs`,
     });
     this.broadcast("notification", { notification: notif });
     if (!isTestMode()) {
@@ -795,7 +864,7 @@ export class DaemonState {
         body: notif.body,
       });
     }
-    this.broadcast("run.cancelled", { run: cancelled });
+    this.broadcast("run.cancelled", { run });
   }
 
   private sortQueue(): void {

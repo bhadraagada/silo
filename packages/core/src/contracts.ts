@@ -60,6 +60,10 @@ export const queueWorkspaceSchema = z.object({
   workspaceSlug: z.string().min(1),
 });
 
+export const runIdSchema = z.object({
+  runId: z.string().min(1),
+});
+
 export const actionExecuteSchema = z.object({
   action: z.string().min(1),
 });

@@ -63,6 +63,7 @@ Operational memory for building and extending `silo`.
 - 2026-02-14: Added `silo continue <run-id> --prompt "..."` CLI command for session continuation.
 - 2026-02-14: Added initial terminal session orchestration via tmux/zellij-aware adapter routing on workspace up/switch.
 - 2026-02-25: Upgraded workspace queue cancel to abort active runs (command and API adapters) and persist `cancelled` status.
+- 2026-02-25: Added per-run cancel controls (`silo cancel <run-id>`, `POST /api/runs/:id/cancel`) for queued and active runs.
 - 2026-02-12: Expanded `web` landing pages to 10 brutalist-style variants (`/1` to `/10`), each with distinct aesthetic and messaging:
   - `/1`: Signal Brutalist (warm, raw control aesthetic)
   - `/2`: Neon Terminal (neon cyan/teal cyberpunk vibes)
@@ -152,6 +153,7 @@ Operational memory for building and extending `silo`.
 - `POST /api/workspaces/:slug/switch`
 - `GET /api/runs?workspace=<slug>`
 - `POST /api/runs`
+- `POST /api/runs/:id/cancel`
 - `GET /api/events?runId=<run-id>`
 - `GET /api/notifications?workspace=<slug>`
 - `GET /api/review?workspace=<slug>`
@@ -177,6 +179,7 @@ Operational memory for building and extending `silo`.
 - `silo switch`
 - `silo run`
 - `silo continue`
+- `silo cancel`
 - `silo runs`
 - `silo events`
 - `silo notifications`
