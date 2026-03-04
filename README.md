@@ -55,7 +55,11 @@
   - configure `command` and `args` in provider profile
 
 Provider profiles live in `~/.silo/providers.json` and can store per-provider model, command args,
-and key env mapping (or direct key where needed).
+and key env mapping.
+
+When setting `apiKey` via `silo profiles set ... --settings`, silo stores the key in an OS-backed
+secure store (macOS Keychain, Linux keyring via `secret-tool`, Windows DPAPI-protected local store)
+and writes only an `apiKeyRef` pointer in `providers.json`.
 
 `profiles validate` performs provider health checks including key resolution, CLI binary availability,
 and small connectivity checks against provider APIs.

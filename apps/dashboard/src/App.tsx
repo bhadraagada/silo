@@ -104,6 +104,7 @@ type Timeline = {
 type ProviderSettings = {
   apiKey?: string;
   apiKeyEnv?: string;
+  apiKeyRef?: string;
   model?: string;
   maxTokens?: number;
   command?: string;
