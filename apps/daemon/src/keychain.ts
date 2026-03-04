@@ -6,6 +6,9 @@ import { ensureSiloDirs } from "@silo/os-adapters";
 const SECRET_SERVICE = "silo.provider.api-key";
 const REF_PREFIX = "silo://provider-key/";
 
+type SpawnSyncFn = typeof spawnSync;
+let spawnSyncImpl: SpawnSyncFn = spawnSync;
+
 export function buildProviderApiKeyRef(profile: string, provider: string): string {
   return `${REF_PREFIX}${safeSegment(profile)}/${safeSegment(provider)}`;
 }
@@ -27,21 +30,25 @@ export function readProviderApiKey(ref: string): string | undefined {
   return result.value;
 }
 
+export function __setSpawnSyncForTests(fn: SpawnSyncFn | null): void {
+  spawnSyncImpl = fn ?? spawnSync;
+}
+
 function storeSecret(ref: string, secret: string): { ok: boolean; detail: string } {
   if (process.platform === "darwin") {
-    const result = spawnSync(
+    const result = spawnSyncImpl(
       "security",
       ["add-generic-password", "-U", "-s", SECRET_SERVICE, "-a", ref, "-w", secret],
       { encoding: "utf8" }
     );
     if ((result.status ?? 1) !== 0) {
-      return { ok: false, detail: `Failed to store API key in macOS Keychain: ${(result.stderr || result.stdout).trim()}` };
+      return { ok: false, detail: `Failed to store API key in macOS Keychain: ${stderrOrStdout(result.stderr, result.stdout)}` };
     }
     return { ok: true, detail: "stored" };
   }
 
   if (process.platform === "linux") {
-    const result = spawnSync(
+    const result = spawnSyncImpl(
       "secret-tool",
       ["store", "--label", "silo provider api key", "service", SECRET_SERVICE, "account", ref],
       { encoding: "utf8", input: secret }
@@ -49,7 +56,7 @@ function storeSecret(ref: string, secret: string): { ok: boolean; detail: string
     if ((result.status ?? 1) !== 0) {
       return {
         ok: false,
-        detail: `Failed to store API key in Linux keyring (secret-tool): ${(result.stderr || result.stdout).trim()}`,
+        detail: `Failed to store API key in Linux keyring (secret-tool): ${stderrOrStdout(result.stderr, result.stdout)}`,
       };
     }
     return { ok: true, detail: "stored" };
@@ -74,23 +81,23 @@ function storeSecret(ref: string, secret: string): { ok: boolean; detail: string
 
 function readSecret(ref: string): { ok: boolean; value: string; detail: string } {
   if (process.platform === "darwin") {
-    const result = spawnSync("security", ["find-generic-password", "-s", SECRET_SERVICE, "-a", ref, "-w"], {
-      encoding: "utf8",
+    const result = spawnSyncImpl("security", ["find-generic-password", "-s", SECRET_SERVICE, "-a", ref, "-w"], {
+      encoding: "buffer",
     });
     if ((result.status ?? 1) !== 0) {
       return { ok: false, value: "", detail: "missing" };
     }
-    return { ok: true, value: result.stdout.trim(), detail: "resolved" };
+    return { ok: true, value: readSensitiveStdout(result.stdout), detail: "resolved" };
   }
 
   if (process.platform === "linux") {
-    const result = spawnSync("secret-tool", ["lookup", "service", SECRET_SERVICE, "account", ref], {
-      encoding: "utf8",
+    const result = spawnSyncImpl("secret-tool", ["lookup", "service", SECRET_SERVICE, "account", ref], {
+      encoding: "buffer",
     });
     if ((result.status ?? 1) !== 0) {
       return { ok: false, value: "", detail: "missing" };
     }
-    return { ok: true, value: result.stdout.trim(), detail: "resolved" };
+    return { ok: true, value: readSensitiveStdout(result.stdout), detail: "resolved" };
   }
 
   if (process.platform === "win32") {
@@ -110,7 +117,7 @@ function readSecret(ref: string): { ok: boolean; value: string; detail: string }
 }
 
 function encryptWithDpapi(secret: string): { ok: boolean; value: string; detail: string } {
-  const result = spawnSync(
+  const result = spawnSyncImpl(
     "powershell",
     [
       "-NoProfile",
@@ -129,14 +136,14 @@ function encryptWithDpapi(secret: string): { ok: boolean; value: string; detail:
     return {
       ok: false,
       value: "",
-      detail: `Failed to encrypt API key with Windows DPAPI: ${(result.stderr || result.stdout).trim()}`,
+      detail: `Failed to encrypt API key with Windows DPAPI: ${stderrOrStdout(result.stderr, result.stdout)}`,
     };
   }
-  return { ok: true, value: result.stdout.trim(), detail: "encrypted" };
+  return { ok: true, value: readSensitiveStdout(result.stdout), detail: "encrypted" };
 }
 
 function decryptWithDpapi(encrypted: string): { ok: boolean; value: string; detail: string } {
-  const result = spawnSync(
+  const result = spawnSyncImpl(
     "powershell",
     [
       "-NoProfile",
@@ -148,7 +155,7 @@ function decryptWithDpapi(encrypted: string): { ok: boolean; value: string; deta
       ].join(" "),
     ],
     {
-      encoding: "utf8",
+      encoding: "buffer",
       env: {
         ...process.env,
         SILO_ENCRYPTED_VALUE: encrypted,
@@ -159,10 +166,10 @@ function decryptWithDpapi(encrypted: string): { ok: boolean; value: string; deta
     return {
       ok: false,
       value: "",
-      detail: `Failed to decrypt API key from Windows DPAPI: ${(result.stderr || result.stdout).trim()}`,
+      detail: `Failed to decrypt API key from Windows DPAPI: ${stderrOrStdout(result.stderr, result.stdout)}`,
     };
   }
-  return { ok: true, value: result.stdout.trim(), detail: "decrypted" };
+  return { ok: true, value: readSensitiveStdout(result.stdout), detail: "decrypted" };
 }
 
 function windowsStorePath(): string {
@@ -210,4 +217,33 @@ function saveWindowsStore(store: Record<string, string>): void {
 
 function safeSegment(input: string): string {
   return input.toLowerCase().replace(/[^a-z0-9-_]/g, "-");
+}
+
+function stderrOrStdout(stderr: string | Buffer | null | undefined, stdout: string | Buffer | null | undefined): string {
+  const message = asTrimmedString(stderr) || asTrimmedString(stdout);
+  return message || "unknown error";
+}
+
+function readSensitiveStdout(stdout: string | Buffer | null | undefined): string {
+  if (typeof stdout === "string") {
+    return stdout.trim();
+  }
+
+  if (Buffer.isBuffer(stdout)) {
+    const value = stdout.toString("utf8").trim();
+    stdout.fill(0);
+    return value;
+  }
+
+  return "";
+}
+
+function asTrimmedString(input: string | Buffer | null | undefined): string {
+  if (typeof input === "string") {
+    return input.trim();
+  }
+  if (Buffer.isBuffer(input)) {
+    return input.toString("utf8").trim();
+  }
+  return "";
 }

@@ -44,7 +44,7 @@ async function validateProvider(provider: string, settings: ProviderSettings): P
     checks.push({
       name: "api-key",
       ok: Boolean(apiKey),
-      detail: apiKey ? "API key resolved" : "Missing API key (env or secure store ref)",
+      detail: apiKey ? "API key resolved" : "Missing API key (inline, env, or secure store ref)",
     });
     if (apiKey) {
       const model = settings.model ?? "gpt-4.1-mini";
@@ -72,7 +72,7 @@ async function validateProvider(provider: string, settings: ProviderSettings): P
     checks.push({
       name: "api-key",
       ok: Boolean(apiKey),
-      detail: apiKey ? "API key resolved" : "Missing API key (env or secure store ref)",
+      detail: apiKey ? "API key resolved" : "Missing API key (inline, env, or secure store ref)",
     });
     if (apiKey) {
       const ping = await fetch("https://api.anthropic.com/v1/messages", {

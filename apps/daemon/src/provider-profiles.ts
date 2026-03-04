@@ -152,6 +152,7 @@ export function resolveApiKey(settings: ProviderSettings): string | undefined {
     if (key) {
       return key;
     }
+    return undefined;
   }
 
   if (settings.apiKey) {
@@ -213,6 +214,15 @@ function applyProfileMigrations(config: ProviderProfilesConfig): { config: Provi
   for (const [name, profile] of Object.entries(config.profiles)) {
     const providers = { ...profile.providers };
 
+    for (const [providerKey, settings] of Object.entries(providers)) {
+      if (!settings) continue;
+      const next = migratePlaintextApiKey(name, providerKey as ProviderKey, settings);
+      if (next !== settings) {
+        providers[providerKey as ProviderKey] = next;
+        updated = true;
+      }
+    }
+
     const codex = providers.codex;
     if (codex && shouldMigrateArgs(codex.args, ["--yolo"])) {
       providers.codex = { ...codex, args: ["exec", "--dangerously-bypass-approvals-and-sandbox", "{prompt}"] };
@@ -254,6 +264,23 @@ function applyProfileMigrations(config: ProviderProfilesConfig): { config: Provi
     },
     updated,
   };
+}
+
+function migratePlaintextApiKey(profileName: string, provider: ProviderKey, settings: ProviderSettings): ProviderSettings {
+  if (!settings.apiKey || settings.apiKeyRef) {
+    return settings;
+  }
+
+  try {
+    const apiKeyRef = storeProviderApiKey(profileName, provider, settings.apiKey);
+    return {
+      ...settings,
+      apiKey: undefined,
+      apiKeyRef,
+    };
+  } catch {
+    return settings;
+  }
 }
 
 function shouldMigrateArgs(existing: string[] | undefined, legacyTokens: string[]): boolean {
